@@ -2,8 +2,12 @@ package storage
 
 import (
 	"database/sql"
-	"fmt"
 	"log"
+
+    "github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/database/sqlite3"
+
+    _ "github.com/golang-migrate/migrate/v4/source/file"
 )
 
 type BlobStorageRequest struct {
@@ -29,12 +33,23 @@ func NewBlobStorage(cfg BlobStorageCfg) (*BlobStorage, error) {
 
     log.Println("connected to queue database")
 
-    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS Blobs (
-        id TEXT PRIMARY KEY, 
-        payload TEXT
-    );`)
+
+    driver, err := sqlite3.WithInstance(db, &sqlite3.Config{})
     if err != nil {
-        return nil, fmt.Errorf("error creating table %v\n", err)
+        log.Printf("Error getting a driver %v\n", err)
+        return nil, err
+    }
+
+    m, err := migrate.NewWithDatabaseInstance("file://resources/sql/blobs", "sqlite3", driver)
+    if err != nil {
+        log.Printf("Error getting a migration %v\n", err)
+        return nil, err
+    }
+
+    log.Println("Running blobs db migration script")
+    if err := m.Up(); err != nil && err.Error() != "no change" {
+        log.Printf("Error running migration %v\n", err)
+        return nil, err
     }
 
     return &BlobStorage{db: db}, nil
