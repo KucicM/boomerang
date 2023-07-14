@@ -56,7 +56,6 @@ func NewBlobStorage(cfg BlobStorageCfg) (*BlobStorage, error) {
 }
 
 func (s *BlobStorage) Save(req BlobStorageRequest) error {
-    log.Printf("%+v\n", req)
     stmt, err := s.db.Prepare("INSERT INTO Blobs (id, payload) VALUES (?, ?)")
     if err != nil {
         return err
@@ -71,7 +70,6 @@ func (s *BlobStorage) Save(req BlobStorageRequest) error {
 }
 
 func (s *BlobStorage) Load(id string) (string, error) {
-    log.Printf("load %+v\n", id)
     row := s.db.QueryRow("SELECT payload FROM Blobs WHERE id = ?", id)
 
     var ret string
