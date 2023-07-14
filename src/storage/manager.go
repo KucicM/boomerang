@@ -7,6 +7,7 @@ import (
 )
 
 type StorageRequest struct {
+    Id string
     Endpoint string
     Payload string
     SendAfter uint64
@@ -74,6 +75,7 @@ func (s *StorageManager) Load() ([]StorageRequest, error) {
         }
 
         req := StorageRequest{
+            Id: item.Id,
             Endpoint: item.Endpoint,
             Payload: payload,
             SendAfter: item.SendAfter,
@@ -82,4 +84,14 @@ func (s *StorageManager) Load() ([]StorageRequest, error) {
     }
 
     return ret, nil
+}
+
+func (s *StorageManager) Delete(id string) {
+    if err := s.queue.Delete(id); err != nil {
+        log.Printf("Delete from queue failed %v\n", err)
+    }
+
+    if err := s.blobs.Delete(id); err != nil {
+        log.Printf("Delete from blobs failed %v\n", err)
+    }
 }

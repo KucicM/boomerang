@@ -76,3 +76,14 @@ func (s *BlobStorage) Load(id string) (string, error) {
     err := row.Scan(&ret)
     return ret, err
 }
+
+func (q *BlobStorage) Delete(id string) error {
+    stmt, err := q.db.Prepare("DELETE FROM Blobs WHERE id = ?")
+    if err != nil {
+        return err
+    }
+    defer stmt.Close()
+
+    _, err = stmt.Exec(id)
+    return err
+}

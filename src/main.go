@@ -6,11 +6,11 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"time"
 
+	"github.com/kucicm/boomerang/src/dispatcher"
 	"github.com/kucicm/boomerang/src/storage"
 
-    _ "github.com/mattn/go-sqlite3"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 type Request struct {
@@ -21,6 +21,7 @@ type Request struct {
 
 type Server struct {
     store *storage.StorageManager
+    inv *dispatcher.Invoker
 }
 
 func NewServer() *Server {
@@ -29,24 +30,11 @@ func NewServer() *Server {
         log.Fatal(err)
     }
 
-    go func() {
-        for {
-            log.Println("sleep")
-            time.Sleep(5 * time.Second)
-            vals, err := mng.Load()
-            if err != nil {
-                log.Println(err)
-                continue
-            } 
-
-            for _, val := range vals {
-                log.Printf("%+v\n", val)
-            }
-        }
-    }()
+    inv := dispatcher.NewInvoker(mng)
 
     return &Server{
         store: mng,
+        inv: inv,
     }
 }
 

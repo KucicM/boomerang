@@ -96,3 +96,13 @@ func (q *PersistentQueue) Pop() ([]QueueRequest, error) {
     return reqs, nil
 }
 
+func (q *PersistentQueue) Delete(id string) error {
+    stmt, err := q.db.Prepare("DELETE FROM PriorityQueue WHERE id = ?")
+    if err != nil {
+        return err
+    }
+    defer stmt.Close()
+
+    _, err = stmt.Exec(id)
+    return err
+}
