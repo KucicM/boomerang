@@ -15,18 +15,16 @@ import (
 
 type Request struct {
     Endpoint string `json:"endpoint"`
-    Payload string `json:"pyaload"`
+    Payload string `json:"payload"`
     SendAfter uint64 `json:"sendAfter"`
 }
 
 type Server struct {
-    queue *storage.PersistentQueue
+    store *storage.StorageManager
 }
 
 func NewServer() *Server {
-
-    queueCfg := storage.PersistentQueueCfg{DbURL: "test_data.db"}
-    q, err := storage.NewQueue(queueCfg)
+    mng, err := storage.NewStorageManager()
     if err != nil {
         log.Fatal(err)
     }
@@ -35,7 +33,7 @@ func NewServer() *Server {
         for {
             log.Println("sleep")
             time.Sleep(5 * time.Second)
-            vals, err := q.Pop()
+            vals, err := mng.Load()
             if err != nil {
                 log.Println(err)
                 continue
@@ -48,7 +46,7 @@ func NewServer() *Server {
     }()
 
     return &Server{
-        queue: q,
+        store: mng,
     }
 }
 
@@ -74,12 +72,13 @@ func (s *Server) AcceptRequest(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    queueReq := storage.QueueRequest{
+    log.Printf("got %+v\n", req)
+    storeReq := storage.StorageRequest{
         Endpoint: req.Endpoint,
         Payload: req.Payload,
         SendAfter: req.SendAfter,
     }
-    if _, err := s.queue.Push(queueReq); err != nil {
+    if err := s.store.Save(storeReq); err != nil {
         w.WriteHeader(http.StatusInternalServerError)
         fmt.Fprintf(w, "Cannot save request to database %v", err)
         return

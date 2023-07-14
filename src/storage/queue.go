@@ -7,13 +7,9 @@ import (
 )
 
 type QueueRequest struct {
+    Id string
     Endpoint string
-    Payload string
     SendAfter uint64
-}
-
-type QueueResponse struct {
-
 }
 
 type PersistentQueueCfg struct {
@@ -35,9 +31,8 @@ func NewQueue(cfg PersistentQueueCfg) (*PersistentQueue, error) {
     log.Println("connected to queue database")
 
     _, err = db.Exec(`CREATE TABLE IF NOT EXISTS PriorityQueue (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, 
+        id TEXT PRIMARY KEY, 
         endpoint TEXT,
-        payload TEXT,
         sendAfter BIGINT
     );`)
     if err != nil {
@@ -51,22 +46,22 @@ func (q *PersistentQueue) Close() {
     q.db.Close()
 }
 
-func (q *PersistentQueue) Push(req QueueRequest) (QueueResponse, error) {
-    stmt, err := q.db.Prepare("INSERT INTO PriorityQueue (endpoint, payload, sendAfter) VALUES (?, ?, ?)")
+func (q *PersistentQueue) Push(req QueueRequest) error {
+    stmt, err := q.db.Prepare("INSERT INTO PriorityQueue (id, endpoint, sendAfter) VALUES (?, ?, ?)")
     if err != nil {
-        return QueueResponse{}, err
+        return err
     }
     defer stmt.Close()
 
-    if _, err = stmt.Exec(req.Endpoint, req.Payload, req.SendAfter); err != nil {
-        return QueueResponse{}, err
+    if _, err = stmt.Exec(req.Id, req.Endpoint, req.SendAfter); err != nil {
+        return err
     }
 
-    return QueueResponse{}, nil
+    return nil
 }
 
 func (q *PersistentQueue) Pop() ([]QueueRequest, error) {
-    rows, err := q.db.Query("SELECT endpoint, payload, sendAfter FROM PriorityQueue")
+    rows, err := q.db.Query("SELECT id, endpoint, sendAfter FROM PriorityQueue")
     if err != nil {
         return nil, err
     }
@@ -74,7 +69,7 @@ func (q *PersistentQueue) Pop() ([]QueueRequest, error) {
     var reqs []QueueRequest
     for rows.Next() {
         var req QueueRequest
-        if rows.Scan(&req.Endpoint, &req.Payload, &req.SendAfter); err != nil {
+        if rows.Scan(&req.Id, &req.Endpoint, &req.SendAfter); err != nil {
             return nil, err
         }
         reqs = append(reqs, req)
