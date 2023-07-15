@@ -73,8 +73,8 @@ func (q *PersistentQueue) Push(req QueueRequest) error {
     return nil
 }
 
-func (q *PersistentQueue) Pop() ([]QueueRequest, error) {
-    rows, err := q.db.Query("SELECT id, endpoint, sendAfter FROM PriorityQueue")
+func (q *PersistentQueue) Pop(maxSize int) ([]QueueRequest, error) {
+    rows, err := q.db.Query("SELECT id, endpoint, sendAfter FROM PriorityQueue LIMIT ?", maxSize)
     if err != nil {
         return nil, err
     }

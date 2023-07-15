@@ -60,8 +60,8 @@ func (s *StorageManager) Save(req StorageRequest) error {
     return nil
 }
 
-func (s *StorageManager) Load() ([]StorageRequest, error) {
-    items, err := s.queue.Pop()
+func (s *StorageManager) Load(maxSize int) ([]StorageRequest, error) {
+    items, err := s.queue.Pop(maxSize)
     if err != nil {
         return nil, err
     }

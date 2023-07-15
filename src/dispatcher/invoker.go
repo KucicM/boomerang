@@ -23,7 +23,7 @@ func NewInvoker(store *storage.StorageManager) *Invoker {
 
 func (i *Invoker) start() {
     for {
-        dbReqs, err := i.store.Load()
+        dbReqs, err := i.store.Load(2)
         if err != nil {
             log.Printf("Cannot load items %v\n", err)
             continue
