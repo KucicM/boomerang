@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -23,6 +24,7 @@ type PersistentQueueCfg struct {
 
 type PersistentQueue struct {
     db *sql.DB
+    lock *sync.Mutex
 }
 
 func NewQueue(cfg PersistentQueueCfg) (*PersistentQueue, error) {
@@ -53,10 +55,13 @@ func NewQueue(cfg PersistentQueueCfg) (*PersistentQueue, error) {
         return nil, err
     }
 
-    return &PersistentQueue{db: db}, nil
+    return &PersistentQueue{db: db, lock: &sync.Mutex{}}, nil
 }
 
 func (q *PersistentQueue) Push(req QueueRequest) error {
+    q.lock.Lock()
+    defer q.lock.Unlock()
+
     stmt, err := q.db.Prepare("INSERT INTO PriorityQueue (id, endpoint, sendAfter) VALUES (?, ?, ?)")
     if err != nil {
         return err
@@ -71,6 +76,9 @@ func (q *PersistentQueue) Push(req QueueRequest) error {
 }
 
 func (q *PersistentQueue) Pop(maxSize int) ([]QueueRequest, error) {
+    q.lock.Lock()
+    defer q.lock.Unlock()
+
     currentTimeMs := time.Now().UnixMilli()
     rows, err := q.db.Query(`SELECT 
         id, endpoint, sendAfter 
@@ -101,6 +109,9 @@ func (q *PersistentQueue) Pop(maxSize int) ([]QueueRequest, error) {
 }
 
 func (q *PersistentQueue) Delete(id string) error {
+    q.lock.Lock()
+    defer q.lock.Unlock()
+
     stmt, err := q.db.Prepare("DELETE FROM PriorityQueue WHERE id = ?")
     if err != nil {
         return err

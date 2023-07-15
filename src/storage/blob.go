@@ -3,11 +3,12 @@ package storage
 import (
 	"database/sql"
 	"log"
+	"sync"
 
-    "github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite3"
 
-    _ "github.com/golang-migrate/migrate/v4/source/file"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
 
 type BlobStorageRequest struct {
@@ -21,6 +22,7 @@ type BlobStorageCfg struct {
 
 type BlobStorage struct {
     db *sql.DB
+    lock *sync.Mutex
 }
 
 func NewBlobStorage(cfg BlobStorageCfg) (*BlobStorage, error) {
@@ -52,10 +54,13 @@ func NewBlobStorage(cfg BlobStorageCfg) (*BlobStorage, error) {
         return nil, err
     }
 
-    return &BlobStorage{db: db}, nil
+    return &BlobStorage{db: db, lock: &sync.Mutex{}}, nil
 }
 
 func (s *BlobStorage) Save(req BlobStorageRequest) error {
+    s.lock.Lock()
+    defer s.lock.Unlock()
+
     stmt, err := s.db.Prepare("INSERT INTO Blobs (id, payload) VALUES (?, ?)")
     if err != nil {
         return err
@@ -70,6 +75,9 @@ func (s *BlobStorage) Save(req BlobStorageRequest) error {
 }
 
 func (s *BlobStorage) Load(id string) (string, error) {
+    s.lock.Lock()
+    defer s.lock.Unlock()
+
     row := s.db.QueryRow("SELECT payload FROM Blobs WHERE id = ?", id)
 
     var ret string
@@ -77,8 +85,11 @@ func (s *BlobStorage) Load(id string) (string, error) {
     return ret, err
 }
 
-func (q *BlobStorage) Delete(id string) error {
-    stmt, err := q.db.Prepare("DELETE FROM Blobs WHERE id = ?")
+func (s *BlobStorage) Delete(id string) error {
+    s.lock.Lock()
+    defer s.lock.Unlock()
+
+    stmt, err := s.db.Prepare("DELETE FROM Blobs WHERE id = ?")
     if err != nil {
         return err
     }
