@@ -57,10 +57,10 @@ func (s *Server) AcceptRequest(w http.ResponseWriter, r *http.Request) {
     if err = json.Unmarshal(body, &req); err != nil {
         w.WriteHeader(http.StatusBadRequest)
         fmt.Fprintf(w, "Cannot parse request body %v", err)
+        log.Printf("Cannot parse request body %v\n", err)
         return
     }
 
-    log.Printf("got %+v\n", req)
     storeReq := storage.StorageRequest{
         Endpoint: req.Endpoint,
         Payload: req.Payload,

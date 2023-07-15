@@ -97,7 +97,6 @@ func (q *PersistentQueue) Pop(maxSize int) ([]QueueRequest, error) {
         return nil, err
     }
 
-
     return reqs, nil
 }
 

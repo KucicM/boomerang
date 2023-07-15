@@ -2,7 +2,6 @@ package dispatcher
 
 import (
 	"bytes"
-	"io"
 	"log"
 	"net/http"
 	"time"
@@ -54,14 +53,6 @@ func (inv *Invoker) invoke(dbReq storage.StorageRequest) {
         return
     }
     defer resp.Body.Close()
-
-    body, err := io.ReadAll(resp.Body)
-    if err != nil {
-        log.Printf("Error reading body %v\n", err)
-        return
-    }
-
-    log.Println(string(body))
 
     inv.store.Delete(dbReq.Id)
 }
