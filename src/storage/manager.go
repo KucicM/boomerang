@@ -56,7 +56,6 @@ func (s *StorageManager) Save(req StorageRequest) error {
         return err
     }
 
-
     return nil
 }
 

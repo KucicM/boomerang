@@ -56,10 +56,6 @@ func NewQueue(cfg PersistentQueueCfg) (*PersistentQueue, error) {
     return &PersistentQueue{db: db}, nil
 }
 
-func (q *PersistentQueue) Close() {
-    q.db.Close()
-}
-
 func (q *PersistentQueue) Push(req QueueRequest) error {
     stmt, err := q.db.Prepare("INSERT INTO PriorityQueue (id, endpoint, sendAfter) VALUES (?, ?, ?)")
     if err != nil {
