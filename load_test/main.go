@@ -45,6 +45,7 @@ func main() {
     }
 
     go srv.spammy(*port)
+    go srv.report()
 
     http.HandleFunc("/", srv.handleReq)
     log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", *port), nil))
@@ -103,8 +104,18 @@ func (s *service) log(created, received int64) {
     totalTime := s.stats.avg * s.stats.cnt
     s.stats.avg = (totalTime + diff) / (s.stats.cnt + 1)
     s.stats.cnt += 1
+}
 
-    if s.stats.cnt % 1000 == 0{
-        log.Printf("%+v\n", s.stats)
+func (s *service) report() {
+    for {
+        time.Sleep(1 * time.Second)
+        s.mu.Lock()
+        max := s.stats.max / 1000
+        min := s.stats.min / 1000
+        avg := s.stats.avg / 1000
+        cnt := s.stats.cnt
+        s.mu.Unlock()
+
+        log.Printf("count: %d\tmin: %dms\tavg: %dms\tmax: %dms\n", cnt, min, avg, max)
     }
 }
