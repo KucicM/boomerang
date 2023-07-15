@@ -3,11 +3,12 @@ package storage
 import (
 	"database/sql"
 	"log"
+	"time"
 
-    "github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite3"
 
-    _ "github.com/golang-migrate/migrate/v4/source/file"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
 
 type QueueRequest struct {
@@ -74,7 +75,15 @@ func (q *PersistentQueue) Push(req QueueRequest) error {
 }
 
 func (q *PersistentQueue) Pop(maxSize int) ([]QueueRequest, error) {
-    rows, err := q.db.Query("SELECT id, endpoint, sendAfter FROM PriorityQueue LIMIT ?", maxSize)
+    currentTimeMs := time.Now().UnixMilli()
+    rows, err := q.db.Query(`SELECT 
+        id, endpoint, sendAfter 
+        FROM PriorityQueue 
+        WHERE sendAfter < ?
+        LIMIT ?`, 
+        currentTimeMs,
+        maxSize,
+    )
     if err != nil {
         return nil, err
     }
