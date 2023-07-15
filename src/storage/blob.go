@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	"log"
+	"strings"
 	"sync"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -74,15 +75,33 @@ func (s *BlobStorage) Save(req BlobStorageRequest) error {
     return nil
 }
 
-func (s *BlobStorage) Load(id string) (string, error) {
+func (s *BlobStorage) Load(ids []string) ([]string, error) {
+    if len(ids) == 0 {
+        return []string{}, nil
+    }
     s.lock.Lock()
     defer s.lock.Unlock()
 
-    row := s.db.QueryRow("SELECT payload FROM Blobs WHERE id = ?", id)
+    query := "SELECT payload FROM Blobs WHERE id in (?" + strings.Repeat(",?", len(ids)-1) +");"
+    args := make([]interface{}, len(ids))
+    for i := 0; i < len(ids); i++ {
+        args[i] = ids[i]
+    }
+    row, err := s.db.Query(query, args...)
+    if err != nil {
+        return nil, err
+    }
 
-    var ret string
-    err := row.Scan(&ret)
-    return ret, err
+    var ret []string
+    for row.Next() {
+        var r string
+        err = row.Scan(&r)
+        if err != nil {
+            return nil, err
+        }
+        ret = append(ret, r)
+    }
+    return ret, nil
 }
 
 func (s *BlobStorage) Delete(id string) error {

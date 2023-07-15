@@ -66,22 +66,25 @@ func (s *StorageManager) Load(maxSize int) ([]StorageRequest, error) {
         return nil, err
     }
 
-    var ret []StorageRequest
-    for _, item := range items {
-        payload, err := s.blobs.Load(item.Id)
-        if err != nil {
-            // TODO item should be put back to queue
-            log.Printf("error loading from blobs %s\n", err)
-            continue
-        }
+    ids := make([]string, len(items))
+    for i := 0; i < len(items); i++ {
+        ids[i] = items[i].Id
+    }
 
-        req := StorageRequest{
-            Id: item.Id,
-            Endpoint: item.Endpoint,
-            Payload: payload,
-            SendAfter: item.SendAfter,
+    payloads, err := s.blobs.Load(ids)
+    if err != nil {
+        log.Printf("error loading blobs %s\n", err)
+        return nil, err
+    }
+
+    ret := make([]StorageRequest, len(payloads))
+    for i := 0; i < len(payloads); i++ {
+        ret[i] = StorageRequest{
+            Id: items[i].Id,
+            Endpoint: items[i].Endpoint,
+            Payload: payloads[i],
+            SendAfter: items[i].SendAfter,
         }
-        ret = append(ret, req)
     }
 
     return ret, nil
