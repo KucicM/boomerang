@@ -14,15 +14,17 @@ const PERIOD = 5 * time.Second
 type Invoker struct {
     store *storage.StorageManager
     maxBatchSize int
+    workerPoolSize int
 }
 
 func NewInvoker(store *storage.StorageManager) *Invoker {
-    invoker := &Invoker{store, 1000}
+    invoker := &Invoker{store, 1000, 100}
     go invoker.start()
     return  invoker
 }
 
 func (inv *Invoker) start() {
+    semaphore := make(chan struct{}, inv.workerPoolSize)
     for {
         dbReqs, err := inv.store.Load(inv.maxBatchSize)
         if err != nil {
@@ -31,15 +33,14 @@ func (inv *Invoker) start() {
         }
 
         for _, dbReq := range dbReqs {
-            go inv.invoke(dbReq)
+            semaphore <- struct{}{}
+            go inv.invoke(dbReq, semaphore)
         }
-
-        time.Sleep(PERIOD)
     }
 }
 
 
-func (inv *Invoker) invoke(dbReq storage.StorageRequest) {
+func (inv *Invoker) invoke(dbReq storage.StorageRequest, semaphore chan struct{}) {
     req, err := http.NewRequest(http.MethodPost, dbReq.Endpoint, bytes.NewBufferString(dbReq.Payload))
     if err != nil {
         log.Printf("Failed to create http request %v\n", err)
@@ -55,4 +56,6 @@ func (inv *Invoker) invoke(dbReq storage.StorageRequest) {
     defer resp.Body.Close()
 
     inv.store.Delete(dbReq.Id)
+
+    <- semaphore
 }

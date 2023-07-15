@@ -80,15 +80,22 @@ func (q *PersistentQueue) Pop(maxSize int) ([]QueueRequest, error) {
     defer q.lock.Unlock()
 
     currentTimeMs := time.Now().UnixMilli()
-    rows, err := q.db.Query(`SELECT 
-        id, endpoint, sendAfter 
-        FROM PriorityQueue 
+    rows, err := q.db.Query(`
+    WITH cte AS (
+        SELECT * 
+        FROM PriorityQueue
         WHERE sendAfter < ?
-        LIMIT ?`, 
+            AND status = 0
+        LIMIT ?
+    )
+    UPDATE PriorityQueue
+    SET status = 1
+    WHERE Id IN (SELECT id FROM cte)
+    RETURNING id, endpoint, sendAfter;`,
         currentTimeMs,
         maxSize,
     )
-    if err != nil {
+    if err != nil && err != sql.ErrNoRows {
         return nil, err
     }
 

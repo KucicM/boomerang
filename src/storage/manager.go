@@ -62,6 +62,7 @@ func (s *StorageManager) Save(req StorageRequest) error {
 func (s *StorageManager) Load(maxSize int) ([]StorageRequest, error) {
     items, err := s.queue.Pop(maxSize)
     if err != nil {
+        log.Printf("error poping from queue %s\n", err)
         return nil, err
     }
 
@@ -70,7 +71,7 @@ func (s *StorageManager) Load(maxSize int) ([]StorageRequest, error) {
         payload, err := s.blobs.Load(item.Id)
         if err != nil {
             // TODO item should be put back to queue
-            log.Println(err)
+            log.Printf("error loading from blobs %s\n", err)
             continue
         }
 
