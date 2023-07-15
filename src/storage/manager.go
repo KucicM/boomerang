@@ -37,24 +37,25 @@ func NewStorageManager() (*StorageManager, error) {
 func (s *StorageManager) Save(req StorageRequest) error {
     id := uuid.New().String()
 
-    qReq := QueueRequest{
-        Id: id,
-        Endpoint: req.Endpoint,
-        SendAfter: req.SendAfter,
-    }
-    if err := s.queue.Push(qReq); err != nil {
-        return err
-    }
-
     bReq := BlobStorageRequest{
         Id: id,
         Payload: req.Payload,
     }
 
     if err := s.blobs.Save(bReq); err != nil {
-        // TODO delete from queue
         return err
     }
+
+    qReq := QueueRequest{
+        Id: id,
+        Endpoint: req.Endpoint,
+        SendAfter: req.SendAfter,
+    }
+    if err := s.queue.Push(qReq); err != nil {
+        _ = s.blobs.Delete(id) // todo handle error
+        return err
+    }
+
 
     return nil
 }
