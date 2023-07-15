@@ -33,7 +33,7 @@ type statistics struct {
 
 func main() {
     port := flag.Int("port", 9999, "Port to listen")
-    targetRPS := flag.Int("rps", 1000, "Target requests per second")
+    targetRPS := flag.Int("rps", 250, "Target requests per second")
     endpoint := flag.String("endpoint", "", "bomerang addr")
     flag.Parse()
 
@@ -57,19 +57,21 @@ func (s *service) spammy(port int) {
     for {
         select {
         case <- ticker.C:
-            now := time.Now()
-            payload := fmt.Sprintf(template, port, now.UnixMicro(), now.UnixMilli())
-            req, err := http.NewRequest(http.MethodPost, s.endpoint, bytes.NewBuffer([]byte(payload)))
-            if err != nil {
-                log.Println(err)
-                return
-            }
+            go func() {
+                now := time.Now()
+                payload := fmt.Sprintf(template, port, now.UnixMicro(), now.UnixMilli())
+                req, err := http.NewRequest(http.MethodPost, s.endpoint, bytes.NewBuffer([]byte(payload)))
+                if err != nil {
+                    log.Println(err)
+                    return
+                }
 
-            if resp, err := http.DefaultClient.Do(req); err != nil {
-                log.Println(err)
-            } else {
-                resp.Body.Close()
-            }
+                if resp, err := http.DefaultClient.Do(req); err != nil {
+                    log.Println(err)
+                } else {
+                    resp.Body.Close()
+                }
+            }()
         }
     }
 }

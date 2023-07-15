@@ -60,8 +60,8 @@ func NewQueue(cfg PersistentQueueCfg) (*PersistentQueue, error) {
     q := &PersistentQueue{db: db, lock: &sync.Mutex{}}
     q.fn = NewBulkProcessor(
         1000,
-        50,
-        time.Microsecond,
+        100,
+        time.Millisecond * 5,
         q.delete,
     )
     return q, nil
@@ -133,6 +133,8 @@ func (q *PersistentQueue) delete(ids []string) error {
         return nil
     }
 
+    start := time.Now()
+
     query := "DELETE FROM PriorityQueue WHERE id in (?" + strings.Repeat(",?", len(ids)-1) +");"
     args := make([]interface{}, len(ids))
     for i := 0; i < len(ids); i++ {
@@ -149,5 +151,8 @@ func (q *PersistentQueue) delete(ids []string) error {
     defer stmt.Close()
 
     _, err = stmt.Exec(args...)
+
+    end := time.Since(start)
+    log.Printf("%d items from queue took %v (avg: %v)\n", len(ids), end, end / time.Duration(len(ids)))
     return err
 }

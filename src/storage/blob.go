@@ -60,8 +60,8 @@ func NewBlobStorage(cfg BlobStorageCfg) (*BlobStorage, error) {
     b :=  &BlobStorage{db: db, lock: &sync.Mutex{}}
     b.bulkProcessor = NewBulkProcessor(
         1000,
-        50,
-        time.Millisecond,
+        100,
+        time.Millisecond * 5,
         b.delete,
     )
 
@@ -111,6 +111,8 @@ func (s *BlobStorage) Load(ids []string) ([]string, error) {
         }
         ret = append(ret, r)
     }
+
+
     return ret, nil
 }
 
@@ -123,6 +125,7 @@ func (s *BlobStorage) delete(ids []string) error {
         return nil
     }
 
+    start := time.Now()
     query := "DELETE FROM Blobs WHERE id in (?" + strings.Repeat(",?", len(ids)-1) +");"
     args := make([]interface{}, len(ids))
     for i := 0; i < len(ids); i++ {
@@ -139,6 +142,8 @@ func (s *BlobStorage) delete(ids []string) error {
     defer stmt.Close()
 
     _, err = stmt.Exec(args...)
+    end := time.Since(start)
+    log.Printf("%d items from blobs took %v (avg: %v)\n", len(ids), end, end / time.Duration(len(ids)))
     return err
 }
 
