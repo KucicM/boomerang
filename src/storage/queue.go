@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,6 +26,7 @@ type PersistentQueueCfg struct {
 type PersistentQueue struct {
     db *sql.DB
     lock *sync.Mutex
+    fn *BulkProcessor[string]
 }
 
 func NewQueue(cfg PersistentQueueCfg) (*PersistentQueue, error) {
@@ -54,8 +56,15 @@ func NewQueue(cfg PersistentQueueCfg) (*PersistentQueue, error) {
         log.Printf("Error running migration %v\n", err)
         return nil, err
     }
-
-    return &PersistentQueue{db: db, lock: &sync.Mutex{}}, nil
+    
+    q := &PersistentQueue{db: db, lock: &sync.Mutex{}}
+    q.fn = NewBulkProcessor(
+        1000,
+        50,
+        time.Microsecond,
+        q.delete,
+    )
+    return q, nil
 }
 
 func (q *PersistentQueue) Push(req QueueRequest) error {
@@ -116,15 +125,29 @@ func (q *PersistentQueue) Pop(maxSize int) ([]QueueRequest, error) {
 }
 
 func (q *PersistentQueue) Delete(id string) error {
+    return q.fn.Add(id)
+}
+
+func (q *PersistentQueue) delete(ids []string) error {
+    if len(ids) == 0 {
+        return nil
+    }
+
+    query := "DELETE FROM PriorityQueue WHERE id in (?" + strings.Repeat(",?", len(ids)-1) +");"
+    args := make([]interface{}, len(ids))
+    for i := 0; i < len(ids); i++ {
+        args[i] = ids[i]
+    }
+
     q.lock.Lock()
     defer q.lock.Unlock()
 
-    stmt, err := q.db.Prepare("DELETE FROM PriorityQueue WHERE id = ?")
+    stmt, err := q.db.Prepare(query)
     if err != nil {
         return err
     }
     defer stmt.Close()
 
-    _, err = stmt.Exec(id)
+    _, err = stmt.Exec(args...)
     return err
 }

@@ -5,6 +5,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite3"
@@ -24,6 +25,7 @@ type BlobStorageCfg struct {
 type BlobStorage struct {
     db *sql.DB
     lock *sync.Mutex
+    bulkProcessor *BulkProcessor[string]
 }
 
 func NewBlobStorage(cfg BlobStorageCfg) (*BlobStorage, error) {
@@ -55,7 +57,15 @@ func NewBlobStorage(cfg BlobStorageCfg) (*BlobStorage, error) {
         return nil, err
     }
 
-    return &BlobStorage{db: db, lock: &sync.Mutex{}}, nil
+    b :=  &BlobStorage{db: db, lock: &sync.Mutex{}}
+    b.bulkProcessor = NewBulkProcessor(
+        1000,
+        50,
+        time.Millisecond,
+        b.delete,
+    )
+
+    return b, nil
 }
 
 func (s *BlobStorage) Save(req BlobStorageRequest) error {
@@ -105,15 +115,30 @@ func (s *BlobStorage) Load(ids []string) ([]string, error) {
 }
 
 func (s *BlobStorage) Delete(id string) error {
+    return s.bulkProcessor.Add(id)
+}
+
+func (s *BlobStorage) delete(ids []string) error {
+    if len(ids) == 0 {
+        return nil
+    }
+
+    query := "DELETE FROM Blobs WHERE id in (?" + strings.Repeat(",?", len(ids)-1) +");"
+    args := make([]interface{}, len(ids))
+    for i := 0; i < len(ids); i++ {
+        args[i] = ids[i]
+    }
+
     s.lock.Lock()
     defer s.lock.Unlock()
 
-    stmt, err := s.db.Prepare("DELETE FROM Blobs WHERE id = ?")
+    stmt, err := s.db.Prepare(query)
     if err != nil {
         return err
     }
     defer stmt.Close()
 
-    _, err = stmt.Exec(id)
+    _, err = stmt.Exec(args...)
     return err
 }
+
