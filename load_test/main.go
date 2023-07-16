@@ -94,7 +94,7 @@ func (s *service) spammy(port int) {
                 start := time.Now().UnixNano()
 
                 now := time.Now()
-                payload := fmt.Sprintf(template, port, now.UnixNano(), now.UnixMilli())
+                payload := fmt.Sprintf(template, port, now.UnixNano(), now.Add(time.Second * 5).UnixMilli())
                 req, err := http.NewRequest(http.MethodPost, s.endpoint, bytes.NewBuffer([]byte(payload)))
                 if err != nil {
                     log.Println(err)
