@@ -3,7 +3,6 @@ package storage
 import (
 	"database/sql"
 	"log"
-	"strings"
 	"sync"
 	"time"
 
@@ -60,6 +59,10 @@ func NewQueue(cfg PersistentQueueCfg) (*PersistentQueue, error) {
 }
 
 func (q *PersistentQueue) PushMany(reqs []QueueRequest) error {
+    if len(reqs) == 0 {
+        return nil
+    }
+
     q.lock.Lock()
     defer q.lock.Unlock()
 
@@ -128,26 +131,34 @@ func (q *PersistentQueue) DeleteMany(ids []string) error {
         return nil
     }
 
-    start := time.Now()
-
-    query := "DELETE FROM PriorityQueue WHERE id in (?" + strings.Repeat(",?", len(ids)-1) +");"
-    args := make([]interface{}, len(ids))
-    for i := 0; i < len(ids); i++ {
-        args[i] = ids[i]
-    }
-
     q.lock.Lock()
     defer q.lock.Unlock()
 
-    stmt, err := q.db.Prepare(query)
+    tx, err := q.db.Begin()
     if err != nil {
+        log.Printf("failed to begin queue delete transaction %s\n", err)
+        return err
+    }
+    defer tx.Rollback()
+
+    stmt, err := tx.Prepare("DELETE FROM PriorityQueue WHERE Id = ?;")
+    if err != nil {
+        log.Printf("failed to create queue delete statement %s\n", err)
         return err
     }
     defer stmt.Close()
 
-    _, err = stmt.Exec(args...)
+    for _, id := range ids {
+        if _, err = stmt.Exec(id); err != nil {
+            log.Printf("error executing queue delete %s\n", err)
+            return err
+        }
+    }
 
-    end := time.Since(start)
-    log.Printf("%d items from queue took %v (avg: %v)\n", len(ids), end, end / time.Duration(len(ids)))
-    return err
+    if err = tx.Commit(); err != nil {
+        log.Printf("error commiting queue delete %s\n", err)
+        return err
+    }
+
+    return nil
 }

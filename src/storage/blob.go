@@ -5,7 +5,6 @@ import (
 	"log"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite3"
@@ -60,6 +59,10 @@ func NewBlobStorage(cfg BlobStorageCfg) (*BlobStorage, error) {
 }
 
 func (s *BlobStorage) BulkSave(reqs []BlobStorageRequest) error {
+    if len(reqs) == 0 {
+        return nil 
+    }
+
     s.lock.Lock()
     defer s.lock.Unlock()
 
@@ -119,25 +122,34 @@ func (s *BlobStorage) DeleteMany(ids []string) error {
         return nil
     }
 
-    start := time.Now()
-    query := "DELETE FROM Blobs WHERE id in (?" + strings.Repeat(",?", len(ids)-1) +");"
-    args := make([]interface{}, len(ids))
-    for i := 0; i < len(ids); i++ {
-        args[i] = ids[i]
-    }
-
     s.lock.Lock()
     defer s.lock.Unlock()
 
-    stmt, err := s.db.Prepare(query)
+    tx, err := s.db.Begin()
     if err != nil {
+        log.Printf("failed to begin blobs delete transaction %s\n", err)
+        return err
+    }
+    defer tx.Rollback() 
+
+    stmt, err := tx.Prepare("DELETE FROM Blobs WHERE id = ?;")
+    if err != nil {
+        log.Printf("failed to create blobs delete statement %s\n", err)
         return err
     }
     defer stmt.Close()
 
-    _, err = stmt.Exec(args...)
-    end := time.Since(start)
-    log.Printf("%d items from blobs took %v (avg: %v)\n", len(ids), end, end / time.Duration(len(ids)))
-    return err
-}
+    for _, id := range ids {
+        if _, err := stmt.Exec(id); err != nil {
+            log.Printf("error executing blobs delete %s\n", err)
+            return err
+        }
+    }
 
+    if err = tx.Commit(); err != nil {
+        log.Printf("error commiting blobs delete %s\n", err)
+        return err
+    }
+
+    return nil
+}

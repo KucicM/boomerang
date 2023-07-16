@@ -64,7 +64,7 @@ func (s *statistics) log() string {
 
 func main() {
     port := flag.Int("port", 9999, "Port to listen")
-    targetRPS := flag.Int("rps", 280, "Target requests per second")
+    targetRPS := flag.Int("rps", 10000, "Target requests per second")
     endpoint := flag.String("endpoint", "", "bomerang addr")
     flag.Parse()
 
@@ -134,6 +134,6 @@ func (s *service) report() {
         sendStats := s.sendStats.log()
         receiveStats := s.receiveStats.log()
         msgStats := s.msgStats.log()
-        log.Printf("\nsend: %s\nrec: %s\nmsg: %s\n", sendStats, receiveStats, msgStats)
+        log.Printf("\nsend:\t%s\nrec:\t%s\nmsg:\t%s\n", sendStats, receiveStats, msgStats)
     }
 }
