@@ -22,18 +22,49 @@ type service struct {
     endpoint string
     mu *sync.Mutex
     stats *statistics
+
+    sendStats *statistics
+    receiveStats *statistics
+    msgStats *statistics
 }
 
 type statistics struct {
+    lock *sync.Mutex
     min int64
     max int64
     avg int64
     cnt int64
 }
 
+func newStats() *statistics {
+    return &statistics{&sync.Mutex{}, math.MaxInt64, math.MinInt64, 0, 0}
+}
+
+func (s *statistics) update(start, end int64) {
+    diff := end - start
+    s.lock.Lock()
+    defer s.lock.Unlock()
+
+    if diff < s.min {
+        s.min = diff
+    } else if diff > s.max {
+        s.max = diff
+    }
+
+    s.avg = (s.cnt * s.avg + diff) / (s.cnt + 1)
+    s.cnt += 1
+}
+
+func (s *statistics) log() string {
+    s.lock.Lock()
+    defer s.lock.Unlock()
+    return fmt.Sprintf("cnt: %d\tmin: %dms\tavg:%dms\tmax: %dms", 
+                s.cnt, s.min / 1000000, s.avg / 1000000, s.max / 1000000)
+ }
+
 func main() {
     port := flag.Int("port", 9999, "Port to listen")
-    targetRPS := flag.Int("rps", 250, "Target requests per second")
+    targetRPS := flag.Int("rps", 280, "Target requests per second")
     endpoint := flag.String("endpoint", "", "bomerang addr")
     flag.Parse()
 
@@ -41,7 +72,9 @@ func main() {
         rps: *targetRPS,
         endpoint: *endpoint,
         mu: &sync.Mutex{},
-        stats: &statistics{math.MaxInt64, math.MinInt64, 0, 0},
+        sendStats: newStats(),
+        receiveStats: newStats(),
+        msgStats: newStats(),
     }
 
     go srv.spammy(*port)
@@ -58,8 +91,10 @@ func (s *service) spammy(port int) {
         select {
         case <- ticker.C:
             go func() {
+                start := time.Now().UnixNano()
+
                 now := time.Now()
-                payload := fmt.Sprintf(template, port, now.UnixMicro(), now.UnixMilli())
+                payload := fmt.Sprintf(template, port, now.UnixNano(), now.UnixMilli())
                 req, err := http.NewRequest(http.MethodPost, s.endpoint, bytes.NewBuffer([]byte(payload)))
                 if err != nil {
                     log.Println(err)
@@ -71,13 +106,15 @@ func (s *service) spammy(port int) {
                 } else {
                     resp.Body.Close()
                 }
+
+                s.sendStats.update(start, time.Now().UnixNano())
             }()
         }
     }
 }
 
 func (s *service) handleReq(w http.ResponseWriter, r *http.Request) {
-    receivedTime := time.Now().UnixMicro()
+    start := time.Now().UnixNano()
 
     body, _ := ioutil.ReadAll(r.Body)
     defer r.Body.Close()
@@ -87,37 +124,16 @@ func (s *service) handleReq(w http.ResponseWriter, r *http.Request) {
         log.Println(err)
     }
 
-    s.log(req.Created, receivedTime)
-}
-
-func (s *service) log(created, received int64) {
-    diff := received - created
-    s.mu.Lock()
-    defer s.mu.Unlock()
-
-    if s.stats.max < diff {
-        s.stats.max = diff
-    }
-
-    if s.stats.min > diff {
-        s.stats.min = diff
-    }
-
-    totalTime := s.stats.avg * s.stats.cnt
-    s.stats.avg = (totalTime + diff) / (s.stats.cnt + 1)
-    s.stats.cnt += 1
+    s.msgStats.update(req.Created, start)
+    s.receiveStats.update(start, time.Now().UnixNano())
 }
 
 func (s *service) report() {
     for {
         time.Sleep(1 * time.Second)
-        s.mu.Lock()
-        max := s.stats.max / 1000
-        min := s.stats.min / 1000
-        avg := s.stats.avg / 1000
-        cnt := s.stats.cnt
-        s.mu.Unlock()
-
-        log.Printf("count: %d\tmin: %dms\tavg: %dms\tmax: %dms\n", cnt, min, avg, max)
+        sendStats := s.sendStats.log()
+        receiveStats := s.receiveStats.log()
+        msgStats := s.msgStats.log()
+        log.Printf("\nsend: %s\nrec: %s\nmsg: %s\n", sendStats, receiveStats, msgStats)
     }
 }
