@@ -26,7 +26,6 @@ type PersistentQueueCfg struct {
 type PersistentQueue struct {
     db *sql.DB
     lock *sync.Mutex
-    fn *BulkProcessor[string]
 }
 
 func NewQueue(cfg PersistentQueueCfg) (*PersistentQueue, error) {
@@ -57,31 +56,31 @@ func NewQueue(cfg PersistentQueueCfg) (*PersistentQueue, error) {
         return nil, err
     }
     
-    q := &PersistentQueue{db: db, lock: &sync.Mutex{}}
-    q.fn = NewBulkProcessor(
-        1000,
-        100,
-        time.Millisecond * 5,
-        q.delete,
-    )
-    return q, nil
+    return &PersistentQueue{db: db, lock: &sync.Mutex{}}, nil
 }
 
-func (q *PersistentQueue) Push(req QueueRequest) error {
+func (q *PersistentQueue) PushMany(reqs []QueueRequest) error {
     q.lock.Lock()
     defer q.lock.Unlock()
 
-    stmt, err := q.db.Prepare("INSERT INTO PriorityQueue (id, endpoint, sendAfter) VALUES (?, ?, ?)")
+    tx, err := q.db.Begin()
+    if err != nil {
+        return err
+    }
+    defer tx.Rollback()
+
+    stmt, err := tx.Prepare("INSERT INTO PriorityQueue (id, endpoint, sendAfter) VALUES (?, ?, ?)")
     if err != nil {
         return err
     }
     defer stmt.Close()
 
-    if _, err = stmt.Exec(req.Id, req.Endpoint, req.SendAfter); err != nil {
-        return err
+    for _, req := range reqs {
+        if _, err = stmt.Exec(req.Id, req.Endpoint, req.SendAfter); err != nil {
+            return err
+        }
     }
-
-    return nil
+    return tx.Commit()
 }
 
 func (q *PersistentQueue) Pop(maxSize int) ([]QueueRequest, error) {
@@ -124,11 +123,7 @@ func (q *PersistentQueue) Pop(maxSize int) ([]QueueRequest, error) {
     return reqs, nil
 }
 
-func (q *PersistentQueue) Delete(id string) error {
-    return q.fn.Add(id)
-}
-
-func (q *PersistentQueue) delete(ids []string) error {
+func (q *PersistentQueue) DeleteMany(ids []string) error {
     if len(ids) == 0 {
         return nil
     }

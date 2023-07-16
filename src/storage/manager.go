@@ -2,6 +2,7 @@ package storage
 
 import (
 	"log"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -16,6 +17,8 @@ type StorageRequest struct {
 type StorageManager struct {
     queue *PersistentQueue
     blobs *BlobStorage
+    bulkSave *BulkProcessor[StorageRequest]
+    bulkDelete *BulkProcessor[string]
 }
 
 func NewStorageManager() (*StorageManager, error) {
@@ -31,28 +34,44 @@ func NewStorageManager() (*StorageManager, error) {
         return nil, err
     }
 
-    return &StorageManager{queue: queue, blobs: blobs}, nil
+    m := &StorageManager{queue: queue, blobs: blobs}
+    m.bulkSave = NewBulkProcessor(
+        1000,
+        100,
+        time.Millisecond * 10,
+        m.save,
+    )
+
+    m.bulkDelete = NewBulkProcessor(
+        1000,
+        100,
+        time.Millisecond * 10,
+        m.delete,
+    )
+
+    return m, nil
 }
 
 func (s *StorageManager) Save(req StorageRequest) error {
-    id := uuid.New().String()
+    req.Id = uuid.New().String()
+    return s.bulkSave.Add(req)
+}
 
-    bReq := BlobStorageRequest{
-        Id: id,
-        Payload: req.Payload,
+func (s *StorageManager) save(reqs []StorageRequest) error {
+    blobReqs := make([]BlobStorageRequest, len(reqs))
+    queueReqs := make([]QueueRequest, len(reqs))
+    for i, req := range reqs {
+        blobReqs[i] = BlobStorageRequest{Id: req.Id, Payload: req.Payload}
+        queueReqs[i] = QueueRequest{Id: req.Id, Endpoint: req.Endpoint, SendAfter: req.SendAfter}
     }
 
-    if err := s.blobs.Save(bReq); err != nil {
+    if err := s.blobs.BulkSave(blobReqs); err != nil {
+        log.Printf("error on bulk blob save %s\n", err)
         return err
     }
 
-    qReq := QueueRequest{
-        Id: id,
-        Endpoint: req.Endpoint,
-        SendAfter: req.SendAfter,
-    }
-    if err := s.queue.Push(qReq); err != nil {
-        _ = s.blobs.Delete(id) // todo handle error
+    if err := s.queue.PushMany(queueReqs); err != nil {
+        log.Printf("error on push many to queue %s\n", err)
         return err
     }
 
@@ -91,11 +110,17 @@ func (s *StorageManager) Load(maxSize int) ([]StorageRequest, error) {
 }
 
 func (s *StorageManager) Delete(id string) {
-    if err := s.queue.Delete(id); err != nil {
+    s.bulkDelete.Add(id)
+}
+
+func (s *StorageManager) delete(ids []string) error {
+    if err := s.queue.DeleteMany(ids); err != nil {
         log.Printf("Delete from queue failed %v\n", err)
     }
 
-    if err := s.blobs.Delete(id); err != nil {
+    if err := s.blobs.DeleteMany(ids); err != nil {
         log.Printf("Delete from blobs failed %v\n", err)
     }
+
+    return  nil
 }

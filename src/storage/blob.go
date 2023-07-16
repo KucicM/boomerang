@@ -25,7 +25,6 @@ type BlobStorageCfg struct {
 type BlobStorage struct {
     db *sql.DB
     lock *sync.Mutex
-    bulkProcessor *BulkProcessor[string]
 }
 
 func NewBlobStorage(cfg BlobStorageCfg) (*BlobStorage, error) {
@@ -57,32 +56,31 @@ func NewBlobStorage(cfg BlobStorageCfg) (*BlobStorage, error) {
         return nil, err
     }
 
-    b :=  &BlobStorage{db: db, lock: &sync.Mutex{}}
-    b.bulkProcessor = NewBulkProcessor(
-        1000,
-        100,
-        time.Millisecond * 5,
-        b.delete,
-    )
-
-    return b, nil
+    return &BlobStorage{db: db, lock: &sync.Mutex{}}, nil
 }
 
-func (s *BlobStorage) Save(req BlobStorageRequest) error {
+func (s *BlobStorage) BulkSave(reqs []BlobStorageRequest) error {
     s.lock.Lock()
     defer s.lock.Unlock()
 
-    stmt, err := s.db.Prepare("INSERT INTO Blobs (id, payload) VALUES (?, ?)")
+    tx, err := s.db.Begin()
+    if err != nil {
+        return err
+    }
+    defer tx.Rollback()
+
+    stmt, err := tx.Prepare("INSERT INTO Blobs (id, payload) VALUES (?, ?)")
     if err != nil {
         return err
     }
     defer stmt.Close()
 
-    if _, err = stmt.Exec(req.Id, req.Payload); err != nil {
-        return err
+    for _, req := range reqs {
+        if _, err = stmt.Exec(req.Id, req.Payload); err != nil {
+            return err
+        }
     }
-
-    return nil
+    return tx.Commit()
 }
 
 func (s *BlobStorage) Load(ids []string) ([]string, error) {
@@ -116,11 +114,7 @@ func (s *BlobStorage) Load(ids []string) ([]string, error) {
     return ret, nil
 }
 
-func (s *BlobStorage) Delete(id string) error {
-    return s.bulkProcessor.Add(id)
-}
-
-func (s *BlobStorage) delete(ids []string) error {
+func (s *BlobStorage) DeleteMany(ids []string) error {
     if len(ids) == 0 {
         return nil
     }
