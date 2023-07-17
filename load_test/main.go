@@ -109,7 +109,13 @@ func main() {
 }
 
 func (s *service) startLoad(port int) {
-    template := `{"endpoint": "http://localhost:%d/", "payload": "{\"expected\": %d}", "sendAfter": %d}`
+    template := `{
+        "endpoint": "http://localhost:%d/", 
+        "payload": "{\"expected\": %d}", 
+        "sendAfter": %d, 
+        "maxRetry": 2, 
+        "backOffMs": 3000
+    }`
     for i := 0; i < int(s.repeat) || s.repeat == 0; i++ {
         s.load(template, port, time.Now().UnixNano())
         s.wait()

@@ -12,21 +12,16 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
 
-type BlobStorageRequest struct {
-    Id string
-    Payload string
-}
-
 type BlobStorageCfg struct {
     DbURL string
 }
 
-type BlobStorage struct {
+type blobStorage struct {
     db *sql.DB
     lock *sync.Mutex
 }
 
-func NewBlobStorage(cfg BlobStorageCfg) (*BlobStorage, error) {
+func newBlobStorage(cfg BlobStorageCfg) (*blobStorage, error) {
     log.Println("connecting to blob database")
     db, err := sql.Open("sqlite3", cfg.DbURL)
     if err != nil {
@@ -55,11 +50,11 @@ func NewBlobStorage(cfg BlobStorageCfg) (*BlobStorage, error) {
         return nil, err
     }
 
-    return &BlobStorage{db: db, lock: &sync.Mutex{}}, nil
+    return &blobStorage{db: db, lock: &sync.Mutex{}}, nil
 }
 
-func (s *BlobStorage) BulkSave(reqs []BlobStorageRequest) error {
-    if len(reqs) == 0 {
+func (s *blobStorage) save(items []blobItem) error {
+    if len(items) == 0 {
         return nil 
     }
 
@@ -78,22 +73,22 @@ func (s *BlobStorage) BulkSave(reqs []BlobStorageRequest) error {
     }
     defer stmt.Close()
 
-    for _, req := range reqs {
-        if _, err = stmt.Exec(req.Id, req.Payload); err != nil {
+    for _, item := range items {
+        if _, err = stmt.Exec(item.id, item.payload); err != nil {
             return err
         }
     }
     return tx.Commit()
 }
 
-func (s *BlobStorage) Load(ids []string) ([]string, error) {
+func (s *blobStorage) load(ids []string) ([]blobItem, error) {
     if len(ids) == 0 {
-        return []string{}, nil
+        return []blobItem{}, nil
     }
     s.lock.Lock()
     defer s.lock.Unlock()
 
-    query := "SELECT payload FROM Blobs WHERE id in (?" + strings.Repeat(",?", len(ids)-1) +");"
+    query := "SELECT id, payload FROM Blobs WHERE id in (?" + strings.Repeat(",?", len(ids)-1) +");"
     args := make([]interface{}, len(ids))
     for i := 0; i < len(ids); i++ {
         args[i] = ids[i]
@@ -103,21 +98,19 @@ func (s *BlobStorage) Load(ids []string) ([]string, error) {
         return nil, err
     }
 
-    var ret []string
+    var ret []blobItem
     for row.Next() {
-        var r string
-        err = row.Scan(&r)
+        var r blobItem
+        err = row.Scan(&r.id, &r.payload)
         if err != nil {
             return nil, err
         }
         ret = append(ret, r)
     }
-
-
     return ret, nil
 }
 
-func (s *BlobStorage) DeleteMany(ids []string) error {
+func (s *blobStorage) delete(ids []string) error {
     if len(ids) == 0 {
         return nil
     }

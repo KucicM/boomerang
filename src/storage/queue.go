@@ -12,22 +12,16 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
 
-type QueueRequest struct {
-    Id string
-    Endpoint string
-    SendAfter uint64
-}
-
 type PersistentQueueCfg struct {
     DbURL string
 }
 
-type PersistentQueue struct {
+type persistentQueue struct {
     db *sql.DB
     lock *sync.Mutex
 }
 
-func NewQueue(cfg PersistentQueueCfg) (*PersistentQueue, error) {
+func newQueue(cfg PersistentQueueCfg) (*persistentQueue, error) {
     log.Println("connecting to queue database")
 
     db, err := sql.Open("sqlite3", cfg.DbURL)
@@ -55,11 +49,11 @@ func NewQueue(cfg PersistentQueueCfg) (*PersistentQueue, error) {
         return nil, err
     }
     
-    return &PersistentQueue{db: db, lock: &sync.Mutex{}}, nil
+    return &persistentQueue{db: db, lock: &sync.Mutex{}}, nil
 }
 
-func (q *PersistentQueue) PushMany(reqs []QueueRequest) error {
-    if len(reqs) == 0 {
+func (q *persistentQueue) save(items []queueItem) error {
+    if len(items) == 0 {
         return nil
     }
 
@@ -72,21 +66,30 @@ func (q *PersistentQueue) PushMany(reqs []QueueRequest) error {
     }
     defer tx.Rollback()
 
-    stmt, err := tx.Prepare("INSERT INTO PriorityQueue (id, endpoint, sendAfter) VALUES (?, ?, ?)")
+    query := "REPLACE INTO PriorityQueue (id, endpoint, sendafter, leftattempts, backoffms, status) VALUES (?, ?, ?, ?, ?, ?)"
+    stmt, err := tx.Prepare(query)
     if err != nil {
         return err
     }
     defer stmt.Close()
 
-    for _, req := range reqs {
-        if _, err = stmt.Exec(req.Id, req.Endpoint, req.SendAfter); err != nil {
+    for _, item := range items {
+        _, err := stmt.Exec(
+            item.id, 
+            item.endpoint, 
+            item.sendAfter, 
+            item.leftAttempts, 
+            item.backOffMs,
+            item.statusId,
+        )
+        if err != nil {
             return err
         }
     }
     return tx.Commit()
 }
 
-func (q *PersistentQueue) Pop(maxSize int) ([]QueueRequest, error) {
+func (q *persistentQueue) load(maxSize int) ([]queueItem, error) {
     q.lock.Lock()
     defer q.lock.Unlock()
 
@@ -96,13 +99,13 @@ func (q *PersistentQueue) Pop(maxSize int) ([]QueueRequest, error) {
         SELECT * 
         FROM PriorityQueue
         WHERE sendAfter < ?
-            AND status = 0
+            AND (status = 0 OR status = 2)
         LIMIT ?
     )
     UPDATE PriorityQueue
     SET status = 1
     WHERE Id IN (SELECT id FROM cte)
-    RETURNING id, endpoint, sendAfter;`,
+    RETURNING id, endpoint, sendafter, leftattempts, backoffms, status;`,
         currentTimeMs,
         maxSize,
     )
@@ -110,23 +113,31 @@ func (q *PersistentQueue) Pop(maxSize int) ([]QueueRequest, error) {
         return nil, err
     }
 
-    var reqs []QueueRequest
+    var items []queueItem
     for rows.Next() {
-        var req QueueRequest
-        if rows.Scan(&req.Id, &req.Endpoint, &req.SendAfter); err != nil {
+        var item queueItem
+        err := rows.Scan(
+            &item.id, 
+            &item.endpoint, 
+            &item.sendAfter, 
+            &item.leftAttempts, 
+            &item.backOffMs,
+            &item.statusId,
+        )
+        if err != nil {
             return nil, err
         }
-        reqs = append(reqs, req)
+        items = append(items, item)
     }
 
     if err = rows.Err(); err != nil {
         return nil, err
     }
 
-    return reqs, nil
+    return items, nil
 }
 
-func (q *PersistentQueue) DeleteMany(ids []string) error {
+func (q *persistentQueue) delete(ids []string) error {
     if len(ids) == 0 {
         return nil
     }
@@ -161,4 +172,8 @@ func (q *PersistentQueue) DeleteMany(ids []string) error {
     }
 
     return nil
+}
+
+func (q *persistentQueue) update(items []queueItem) error {
+    return q.save(items)
 }

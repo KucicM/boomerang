@@ -7,29 +7,23 @@ import (
 	"github.com/google/uuid"
 )
 
-type StorageRequest struct {
-    Id string
-    Endpoint string
-    Payload string
-    SendAfter uint64
-}
-
 type StorageManager struct {
-    queue *PersistentQueue
-    blobs *BlobStorage
-    bulkSave *BulkProcessor[StorageRequest]
+    queue *persistentQueue
+    blobs *blobStorage
+    bulkSave *BulkProcessor[StorageItem]
     bulkDelete *BulkProcessor[string]
+    bulkUpdate *BulkProcessor[queueItem]
 }
 
 func NewStorageManager() (*StorageManager, error) {
     queueCfg := PersistentQueueCfg{DbURL: "queue.db"}
-    queue, err := NewQueue(queueCfg)
+    queue, err := newQueue(queueCfg)
     if err != nil {
         return nil, err
     }
 
     blobCfg := BlobStorageCfg{DbURL: "blobs.db"}
-    blobs, err := NewBlobStorage(blobCfg)
+    blobs, err := newBlobStorage(blobCfg)
     if err != nil {
         return nil, err
     }
@@ -49,28 +43,35 @@ func NewStorageManager() (*StorageManager, error) {
         m.delete,
     )
 
+    m.bulkUpdate = NewBulkProcessor(
+        1000,
+        100,
+        time.Millisecond * 10,
+        m.update,
+    )
+
     return m, nil
 }
 
-func (s *StorageManager) Save(req StorageRequest) error {
-    req.Id = uuid.New().String()
-    return s.bulkSave.Add(req)
+func (s *StorageManager) Save(item StorageItem) error {
+    item.Id = uuid.New().String()
+    return s.bulkSave.Add(item)
 }
 
-func (s *StorageManager) save(reqs []StorageRequest) error {
-    blobReqs := make([]BlobStorageRequest, len(reqs))
-    queueReqs := make([]QueueRequest, len(reqs))
-    for i, req := range reqs {
-        blobReqs[i] = BlobStorageRequest{Id: req.Id, Payload: req.Payload}
-        queueReqs[i] = QueueRequest{Id: req.Id, Endpoint: req.Endpoint, SendAfter: req.SendAfter}
+func (s *StorageManager) save(items []StorageItem) error {
+    blobItems := make([]blobItem, len(items))
+    queueItems := make([]queueItem, len(items))
+    for i, item := range items {
+        blobItems[i] = toBlobItem(item)
+        queueItems[i] = toQueueItem(item)
     }
 
-    if err := s.blobs.BulkSave(blobReqs); err != nil {
+    if err := s.blobs.save(blobItems); err != nil {
         log.Printf("error on bulk blob save %s\n", err)
         return err
     }
 
-    if err := s.queue.PushMany(queueReqs); err != nil {
+    if err := s.queue.save(queueItems); err != nil {
         log.Printf("error on push many to queue %s\n", err)
         return err
     }
@@ -78,49 +79,55 @@ func (s *StorageManager) save(reqs []StorageRequest) error {
     return nil
 }
 
-func (s *StorageManager) Load(maxSize int) ([]StorageRequest, error) {
-    items, err := s.queue.Pop(maxSize)
+func (s *StorageManager) Load(maxSize int) ([]StorageItem, error) {
+    queueItems, err := s.queue.load(maxSize)
     if err != nil {
         log.Printf("error poping from queue %s\n", err)
         return nil, err
     }
 
-    ids := make([]string, len(items))
-    for i := 0; i < len(items); i++ {
-        ids[i] = items[i].Id
+    ids := make([]string, len(queueItems))
+    for i := 0; i < len(queueItems); i++ {
+        ids[i] = queueItems[i].id
     }
 
-    payloads, err := s.blobs.Load(ids)
+    blobItems, err := s.blobs.load(ids)
     if err != nil {
         log.Printf("error loading blobs %s\n", err)
         return nil, err
     }
 
-    ret := make([]StorageRequest, len(payloads))
-    for i := 0; i < len(payloads); i++ {
-        ret[i] = StorageRequest{
-            Id: items[i].Id,
-            Endpoint: items[i].Endpoint,
-            Payload: payloads[i],
-            SendAfter: items[i].SendAfter,
-        }
+    ret := make([]StorageItem, len(blobItems))
+    for i := 0; i < len(blobItems); i++ {
+        ret[i] = toStorageItem(queueItems[i], blobItems[i])
     }
 
     return ret, nil
 }
 
-func (s *StorageManager) Delete(id string) {
-    s.bulkDelete.Add(id)
+func (s *StorageManager) Update(item StorageItem) error {
+    return s.bulkUpdate.Add(toQueueItem(item))
 }
 
+func (s *StorageManager) update(items []queueItem) error {
+    if err := s.queue.update(items); err != nil {
+        log.Printf("failed to update queue %s\n", err)
+        return err
+    }
+    return nil
+}
+
+func (s *StorageManager) Delete(item StorageItem) {
+    s.bulkDelete.Add(item.Id)
+}
+
+// todo retry delete
 func (s *StorageManager) delete(ids []string) error {
-    if err := s.queue.DeleteMany(ids); err != nil {
+    if err := s.queue.delete(ids); err != nil {
         log.Printf("Delete from queue failed %v\n", err)
     }
-
-    if err := s.blobs.DeleteMany(ids); err != nil {
+    if err := s.blobs.delete(ids); err != nil {
         log.Printf("Delete from blobs failed %v\n", err)
     }
-
     return  nil
 }
