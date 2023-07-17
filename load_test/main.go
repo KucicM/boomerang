@@ -14,14 +14,23 @@ import (
 )
 
 type Request struct {
-    Created int64 `json:"created"`
+    ExpectedAfter int64 `json:"expected"`
 }
 
 type service struct {
-    rps int
     endpoint string
+
+    rps int
+
+    loadInterval time.Duration
+    waitInterval time.Duration
+
+    callbackTime time.Duration
+    fixedCallbackTime bool
+
+    repeat uint
+
     mu *sync.Mutex
-    stats *statistics
 
     sendStats *statistics
     receiveStats *statistics
@@ -64,53 +73,92 @@ func (s *statistics) log() string {
 
 func main() {
     port := flag.Int("port", 9999, "Port to listen")
-    targetRPS := flag.Int("rps", 10000, "Target requests per second")
     endpoint := flag.String("endpoint", "", "bomerang addr")
+
+    targetRPS := flag.Int("rps", 10000, "Target requests per second")
+
+    loadInterval := flag.Duration("load-interval", 10 * time.Second, "Period duration with load in the interval")
+    waitInterval := flag.Duration("wait-interval", 10 * time.Second, "Period duration without load in the interval")
+    callbackTime := flag.Duration("callback-time", 10 * time.Second, "Duration after is expected to have callback") 
+    fiexdCallbackTime := flag.Bool("fixed-callback-time", true, "Is callback time fixed per interval or always increasing") 
+    repeat := flag.Uint("repeat", 0, "How many time should interval be repeated, 0 = inf")
     flag.Parse()
 
     srv := &service{
-        rps: *targetRPS,
         endpoint: *endpoint,
+
+        rps: *targetRPS,
+
+        loadInterval: *loadInterval,
+        waitInterval: *waitInterval,
+        callbackTime: *callbackTime,
+        fixedCallbackTime: *fiexdCallbackTime,
+        repeat: *repeat,
+
         mu: &sync.Mutex{},
         sendStats: newStats(),
         receiveStats: newStats(),
         msgStats: newStats(),
     }
 
-    go srv.spammy(*port)
+    go srv.startLoad(*port)
     go srv.report()
 
     http.HandleFunc("/", srv.handleReq)
     log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", *port), nil))
 }
 
-func (s *service) spammy(port int) {
-    template := `{"endpoint": "http://localhost:%d/", "payload": "{\"created\": %d}", "sendAfter": %d}`
+func (s *service) startLoad(port int) {
+    template := `{"endpoint": "http://localhost:%d/", "payload": "{\"expected\": %d}", "sendAfter": %d}`
+    for i := 0; i < int(s.repeat) || s.repeat == 0; i++ {
+        s.load(template, port, time.Now().UnixNano())
+        s.wait()
+    }
+}
+
+func (s *service) load(template string, port int, start int64) {
     ticker := time.NewTicker(time.Second / time.Duration(s.rps))
+
+    timeout := time.NewTimer(s.loadInterval)
+    defer timeout.Stop()
+
     for {
         select {
         case <- ticker.C:
-            go func() {
-                start := time.Now().UnixNano()
-
-                now := time.Now()
-                payload := fmt.Sprintf(template, port, now.UnixNano(), now.Add(time.Second * 5).UnixMilli())
-                req, err := http.NewRequest(http.MethodPost, s.endpoint, bytes.NewBuffer([]byte(payload)))
-                if err != nil {
-                    log.Println(err)
-                    return
-                }
-
-                if resp, err := http.DefaultClient.Do(req); err != nil {
-                    log.Println(err)
-                } else {
-                    resp.Body.Close()
-                }
-
-                s.sendStats.update(start, time.Now().UnixNano())
-            }()
+            go s.send(template, port, start)
+        case <-timeout.C:
+            return
         }
     }
+}
+
+func (s *service) wait() {
+    time.Sleep(s.waitInterval)
+}
+
+func (s *service) send(template string, port int, start int64) {
+    funStart := time.Now()
+    var sendAfter int64
+    if s.fixedCallbackTime {
+        sendAfter = start + s.callbackTime.Nanoseconds()
+    } else {
+        sendAfter = funStart.Add(s.callbackTime).UnixNano()
+    }
+
+    payload := fmt.Sprintf(template, port, sendAfter, sendAfter / 1000 / 1000)
+    req, err := http.NewRequest(http.MethodPost, s.endpoint, bytes.NewBuffer([]byte(payload)))
+    if err != nil {
+        log.Println(err)
+        return
+    }
+
+    if resp, err := http.DefaultClient.Do(req); err != nil {
+        log.Println(err)
+    } else {
+        resp.Body.Close()
+    }
+
+    s.sendStats.update(funStart.UnixNano(), time.Now().UnixNano())
 }
 
 func (s *service) handleReq(w http.ResponseWriter, r *http.Request) {
@@ -124,8 +172,8 @@ func (s *service) handleReq(w http.ResponseWriter, r *http.Request) {
         log.Println(err)
     }
 
-    s.msgStats.update(req.Created, start)
     s.receiveStats.update(start, time.Now().UnixNano())
+    s.msgStats.update(req.ExpectedAfter, start)
 }
 
 func (s *service) report() {
