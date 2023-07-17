@@ -131,3 +131,29 @@ func (s *StorageManager) delete(ids []string) error {
     }
     return  nil
 }
+
+func (s *StorageManager) Shutdown() error {
+    log.Println("store shutdown...")
+
+    log.Println("shutdown bulk save")
+    s.bulkSave.Shutdown()
+
+    log.Println("shutdown bulk update")
+    s.bulkUpdate.Shutdown()
+
+    log.Println("shutdown bulk delete")
+    s.bulkDelete.Shutdown()
+
+
+    var ret error
+    if err := s.queue.Shutdown(); err != nil {
+        log.Printf("error shutdown queue %s\n", err)
+        ret = err
+    }
+
+    if err := s.blobs.Shutdown(); err != nil {
+        log.Printf("error shutdown blobs %s\n", err)
+        ret = err
+    }
+    return ret
+}

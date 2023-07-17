@@ -177,3 +177,9 @@ func (q *persistentQueue) delete(ids []string) error {
 func (q *persistentQueue) update(items []queueItem) error {
     return q.save(items)
 }
+
+func (q *persistentQueue) Shutdown() error {
+    log.Println("queue shutdown")
+    q.lock.Lock()
+    return q.db.Close()
+}

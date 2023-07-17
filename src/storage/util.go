@@ -1,6 +1,9 @@
 package storage
 
-import "time"
+import (
+	"sync/atomic"
+	"time"
+)
 
 type task [T any] struct {
     item T
@@ -12,6 +15,9 @@ type BulkProcessor [T any] struct {
     maxBatchSize int
     maxWait time.Duration
     fn func([]T) error
+
+    statusId int32
+    done chan struct{}
 }
 
 func NewBulkProcessor[T any](
@@ -25,6 +31,8 @@ func NewBulkProcessor[T any](
         maxBatchSize: maxBatchSize,
         maxWait: maxWait,
         fn: batchFn,
+        statusId: 0,
+        done: make(chan struct{}),
     }
     go b.start()
     return b
@@ -37,13 +45,14 @@ func (b *BulkProcessor[T]) Add(item T) error {
 }
 
 func (b *BulkProcessor[T]) start() {
-    for {
+    for atomic.LoadInt32(&b.statusId) == 0 {
         batch, errs := b.createBatch()
         err := b.fn(batch)
         for i := 0; i < len(errs); i++ {
             errs[i] <- err
         }
     }
+    b.done<-struct{}{}
 }
 
 func (b *BulkProcessor[T]) createBatch() ([]T, []chan error) {
@@ -62,4 +71,13 @@ func (b *BulkProcessor[T]) createBatch() ([]T, []chan error) {
         }
     }
     return items, errs
+}
+
+func (b *BulkProcessor[T]) Shutdown() error {
+    for len(b.queue) > 0 {
+        time.Sleep(time.Second)
+    }
+    atomic.StoreInt32(&b.statusId, 1)
+    <-b.done
+    return nil
 }

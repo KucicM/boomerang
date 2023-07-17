@@ -1,7 +1,6 @@
 package dispatcher
 
 import (
-	"log"
 	"time"
 
 	"github.com/kucicm/boomerang/src/storage"
@@ -24,7 +23,10 @@ func (r *Retrier) Retry(item storage.StorageItem) {
     item.MaxRetry -= 1
     item.SendAfter = uint64(time.Now().UnixMilli()) + uint64(item.BackOffMs)
 
-    log.Printf("retry %+v\n", item)
-    r.store.Update(item)
+    for {
+        if err := r.store.Update(item); err == nil {
+            return
+        }
+    }
 }
 

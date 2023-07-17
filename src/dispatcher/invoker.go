@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"log"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/kucicm/boomerang/src/storage"
@@ -16,18 +17,22 @@ type Invoker struct {
     retry *Retrier
     maxBatchSize int
     workerPoolSize int
+
+    status int32
+    done chan struct{}
 }
 
 func NewInvoker(store *storage.StorageManager) *Invoker {
     retry := NewRetrier(store)
-    invoker := &Invoker{store, retry, 1000, 100}
+    invoker := &Invoker{store, retry, 1000, 100, 0, make(chan struct{})}
     go invoker.start()
     return invoker
 }
 
 func (inv *Invoker) start() {
     semaphore := make(chan struct{}, inv.workerPoolSize)
-    for {
+
+    for atomic.LoadInt32(&inv.status) == 0 {
         dbReqs, err := inv.store.Load(inv.maxBatchSize)
         if err != nil {
             log.Printf("Cannot load items %v\n", err)
@@ -39,6 +44,13 @@ func (inv *Invoker) start() {
             go inv.invoke(dbReq, semaphore)
         }
     }
+
+    close(semaphore)
+    for len(semaphore) > 0 {
+        <-semaphore
+    }
+
+    inv.done <-struct{}{}
 }
 
 
@@ -62,4 +74,11 @@ func (inv *Invoker) invoke(dbItem storage.StorageItem, semaphore chan struct{}) 
     inv.store.Delete(dbItem)
 
     <- semaphore
+}
+
+func (inv *Invoker) Shutdown() error {
+    log.Println("Invoker shutdown...")
+    atomic.StoreInt32(&inv.status, 1)
+    <-inv.done
+    return nil
 }

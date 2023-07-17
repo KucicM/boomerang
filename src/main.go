@@ -1,89 +1,38 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
-	"io/ioutil"
+	"errors"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 
-	"github.com/kucicm/boomerang/src/dispatcher"
-	"github.com/kucicm/boomerang/src/storage"
-
+	"github.com/kucicm/boomerang/src/server"
 	_ "github.com/mattn/go-sqlite3"
 )
 
-type Request struct {
-    Endpoint string `json:"endpoint"`
-    Payload string `json:"payload"`
-    SendAfter uint64 `json:"sendAfter"`
-    MaxRetry int `json:"maxRetry"`
-    BackOffMs uint64 `json:"backOffMs"`
-}
-
-type Server struct {
-    store *storage.StorageManager
-    inv *dispatcher.Invoker
-}
-
-func NewServer() *Server {
-    mng, err := storage.NewStorageManager()
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    inv := dispatcher.NewInvoker(mng)
-
-    return &Server{
-        store: mng,
-        inv: inv,
-    }
-}
-
-func (s *Server) AcceptRequest(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodPost {
-        w.WriteHeader(http.StatusMethodNotAllowed)
-        return
-    }
-
-    body, err := ioutil.ReadAll(r.Body)
-    if err != nil {
-        w.WriteHeader(http.StatusInternalServerError)
-        fmt.Fprintf(w, "Error reading request body %v", err)
-        log.Printf("Error in submit %v\n", err)
-        return
-    }
-    defer r.Body.Close()
-
-    var req Request
-    if err = json.Unmarshal(body, &req); err != nil {
-        w.WriteHeader(http.StatusBadRequest)
-        fmt.Fprintf(w, "Cannot parse request body %v", err)
-        log.Printf("Cannot parse request body %v\n", err)
-        return
-    }
-
-    storeReq := storage.StorageItem{
-        Endpoint: req.Endpoint,
-        Payload: req.Payload,
-        SendAfter: req.SendAfter,
-        MaxRetry: req.MaxRetry,
-        BackOffMs: req.BackOffMs,
-    }
-    if err := s.store.Save(storeReq); err != nil {
-        w.WriteHeader(http.StatusInternalServerError)
-        fmt.Fprintf(w, "Cannot save request to database %v", err)
-        return
-    }
-
-    fmt.Fprintf(w, "%s", body)
-}
 
 func main() {
-    srv := NewServer()
-    log.Println("servise started")
+    srv := server.NewServer()
     http.HandleFunc("/submit", srv.AcceptRequest)
-    log.Fatal(http.ListenAndServe(":8888", nil))
+
+    go func() {
+        if err := http.ListenAndServe(":8888", nil); !errors.Is(err, http.ErrServerClosed) {
+            log.Fatalf("Server failed %s\n", err)
+        }
+        log.Println("Server stopping...")
+    }()
+
+
+    // wait for shutdown
+    ch := make(chan os.Signal, 1)
+    signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
+    <-ch
+
+    if err := srv.Shutdown(); err != nil {
+        log.Fatalf("Failed to shutdown server %s", err)
+    }
 }
 
 

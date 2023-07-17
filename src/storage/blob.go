@@ -146,3 +146,9 @@ func (s *blobStorage) delete(ids []string) error {
 
     return nil
 }
+
+func (b *blobStorage) Shutdown() error {
+    log.Println("blob shutdown")
+    b.lock.Lock()
+    return b.db.Close()
+}
