@@ -2,6 +2,7 @@ package dispatcher
 
 import (
 	"bytes"
+	"encoding/json"
 	"log"
 	"net/http"
 	"sync/atomic"
@@ -60,6 +61,17 @@ func (inv *Invoker) invoke(dbItem storage.StorageItem, semaphore chan struct{}) 
         inv.retry.Retry(dbItem)
         log.Printf("Failed to create http request %v\n", err)
         return
+    }
+
+    var headers map[string]string
+    if err = json.Unmarshal([]byte(dbItem.Headers), &headers); err != nil && len(dbItem.Headers) > 0 {
+        inv.retry.Retry(dbItem)
+        log.Printf("Failed to add headers %v\n", err)
+        return
+    }
+
+    for k, v := range headers {
+        req.Header.Add(k, v)
     }
 
     client := &http.Client{}

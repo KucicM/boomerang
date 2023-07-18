@@ -8,10 +8,11 @@ type StorageItem struct {
     BackOffMs uint64
     StatusId int
     Payload string
+    Headers string
 }
 
 func toStorageItem(q queueItem, b blobItem) StorageItem {
-    return StorageItem{q.id, q.endpoint, q.sendAfter, q.leftAttempts, q.backOffMs, q.statusId, b.payload}
+    return StorageItem{q.id, q.endpoint, q.sendAfter, q.leftAttempts, q.backOffMs, q.statusId, b.payload, b.headers}
 }
 
 type queueItem struct {
@@ -30,8 +31,9 @@ func toQueueItem(s StorageItem) queueItem {
 type blobItem struct {
     id string
     payload string
+    headers string
 }
 
 func toBlobItem(s StorageItem) blobItem {
-    return blobItem{s.Id, s.Payload}
+    return blobItem{s.Id, s.Payload, s.Headers}
 }

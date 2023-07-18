@@ -67,14 +67,14 @@ func (s *blobStorage) save(items []blobItem) error {
     }
     defer tx.Rollback()
 
-    stmt, err := tx.Prepare("INSERT INTO Blobs (id, payload) VALUES (?, ?)")
+    stmt, err := tx.Prepare("INSERT INTO Blobs (id, payload, headers) VALUES (?, ?, ?)")
     if err != nil {
         return err
     }
     defer stmt.Close()
 
     for _, item := range items {
-        if _, err = stmt.Exec(item.id, item.payload); err != nil {
+        if _, err = stmt.Exec(item.id, item.payload, item.headers); err != nil {
             return err
         }
     }
@@ -88,7 +88,7 @@ func (s *blobStorage) load(ids []string) ([]blobItem, error) {
     s.lock.Lock()
     defer s.lock.Unlock()
 
-    query := "SELECT id, payload FROM Blobs WHERE id in (?" + strings.Repeat(",?", len(ids)-1) +");"
+    query := "SELECT id, payload, headers FROM Blobs WHERE id in (?" + strings.Repeat(",?", len(ids)-1) +");"
     args := make([]interface{}, len(ids))
     for i := 0; i < len(ids); i++ {
         args[i] = ids[i]
@@ -101,7 +101,7 @@ func (s *blobStorage) load(ids []string) ([]blobItem, error) {
     var ret []blobItem
     for row.Next() {
         var r blobItem
-        err = row.Scan(&r.id, &r.payload)
+        err = row.Scan(&r.id, &r.payload, &r.headers)
         if err != nil {
             return nil, err
         }

@@ -110,11 +110,12 @@ func main() {
 
 func (s *service) startLoad(port int) {
     template := `{
-        "endpoint": "http://localhost:%d/", 
-        "payload": "{\"expected\": %d}", 
-        "sendAfter": %d, 
-        "maxRetry": 2, 
-        "backOffMs": 3000
+        "endpoint": "http://localhost:%d/",
+        "payload": "{\"expected\": %d}",
+        "sendAfter": %d,
+        "maxRetry": 2,
+        "backOffMs": 3000,
+        "headers": "{\"Accept-Encoding\": \"compress\",\"Accept\": \"application/json\"}"
     }`
     for i := 0; i < int(s.repeat) || s.repeat == 0; i++ {
         s.load(template, port, time.Now().UnixNano())
@@ -172,6 +173,10 @@ func (s *service) handleReq(w http.ResponseWriter, r *http.Request) {
 
     body, _ := ioutil.ReadAll(r.Body)
     defer r.Body.Close()
+
+    for k, v := range r.Header {
+        log.Printf("%s: %s\n", k, v)
+    }
 
     var req Request
     if err := json.Unmarshal(body, &req); err != nil {

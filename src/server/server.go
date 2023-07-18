@@ -17,6 +17,7 @@ type Request struct {
     SendAfter uint64 `json:"sendAfter"`
     MaxRetry int `json:"maxRetry"`
     BackOffMs uint64 `json:"backOffMs"`
+    Headers string `json:"headers"`
 }
 
 type Server struct {
@@ -67,6 +68,7 @@ func (s *Server) AcceptRequest(w http.ResponseWriter, r *http.Request) {
         SendAfter: req.SendAfter,
         MaxRetry: req.MaxRetry,
         BackOffMs: req.BackOffMs,
+        Headers: req.Headers,
     }
     if err := s.store.Save(storeReq); err != nil {
         w.WriteHeader(http.StatusInternalServerError)
