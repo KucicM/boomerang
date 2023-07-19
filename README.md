@@ -9,7 +9,6 @@ Should support: Sqlite, Postgresql, Cassandra/Scylla
 ## TODOS:
 
 - [ ] Status enum
-- [ ] Add metrics
 - [ ] Yaml config
 - [ ] Mutli instance support
 - [ ] Make it safe to restart
