@@ -6,10 +6,25 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/kucicm/boomerang/src/dispatcher"
 	"github.com/kucicm/boomerang/src/storage"
+	"github.com/prometheus/client_golang/prometheus"
 )
+
+var submitHistogram = prometheus.NewHistogramVec(
+    prometheus.HistogramOpts{
+        Name: "submit_requests", 
+        Help: "Every call on endpoint /submnit",
+    },
+    []string{"success"},
+)
+
+func init() {
+    prometheus.MustRegister(submitHistogram)
+}
 
 type Request struct {
     Endpoint string `json:"endpoint"`
@@ -40,6 +55,11 @@ func NewServer() *Server {
 }
 
 func (s *Server) AcceptRequest(w http.ResponseWriter, r *http.Request) {
+    var success = false
+    defer func(start time.Time) {
+        submitHistogram.WithLabelValues(strconv.FormatBool(success)).Observe(float64(time.Since(start).Milliseconds()))
+    }(time.Now())
+
     if r.Method != http.MethodPost {
         w.WriteHeader(http.StatusMethodNotAllowed)
         return
@@ -77,6 +97,7 @@ func (s *Server) AcceptRequest(w http.ResponseWriter, r *http.Request) {
     }
 
     fmt.Fprintf(w, "%s", body)
+    success = true
 }
 
 func (s *Server) Shutdown() error {

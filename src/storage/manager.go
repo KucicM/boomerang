@@ -5,7 +5,25 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 )
+
+var storageHistogram = prometheus.NewHistogramVec(
+    prometheus.HistogramOpts{Name: "db_manager_ops", Help: "Operations from database managment"},
+    []string{"type", "op"},
+)
+
+var storageQueueSize = prometheus.NewGaugeVec(
+    prometheus.GaugeOpts{Name: "db_manager_queue", Help: "Size of database queues"},
+    []string{"op"},
+)
+
+func init() {
+    prometheus.MustRegister(
+        storageHistogram,
+        storageQueueSize,
+    )
+}
 
 type StorageManager struct {
     queue *persistentQueue
@@ -54,11 +72,21 @@ func NewStorageManager() (*StorageManager, error) {
 }
 
 func (s *StorageManager) Save(item StorageItem) error {
+    defer func(start time.Time) {
+        storageHistogram.WithLabelValues("single", "save").Observe(float64(time.Since(start)))
+        storageQueueSize.WithLabelValues("save").Inc()
+    }(time.Now())
+
     item.Id = uuid.New().String()
     return s.bulkSave.Add(item)
 }
 
 func (s *StorageManager) save(items []StorageItem) error {
+    defer func(start time.Time) {
+        storageHistogram.WithLabelValues("bulk", "save").Observe(float64(time.Since(start)))
+        storageQueueSize.WithLabelValues("save").Sub(float64(len(items)))
+    }(time.Now())
+
     blobItems := make([]blobItem, len(items))
     queueItems := make([]queueItem, len(items))
     for i, item := range items {
@@ -80,6 +108,10 @@ func (s *StorageManager) save(items []StorageItem) error {
 }
 
 func (s *StorageManager) Load(maxSize int) ([]StorageItem, error) {
+    defer func(start time.Time) {
+        storageHistogram.WithLabelValues("bulk", "load").Observe(float64(time.Since(start)))
+    }(time.Now())
+
     queueItems, err := s.queue.load(maxSize)
     if err != nil {
         log.Printf("error poping from queue %s\n", err)
@@ -106,10 +138,20 @@ func (s *StorageManager) Load(maxSize int) ([]StorageItem, error) {
 }
 
 func (s *StorageManager) Update(item StorageItem) error {
+    defer func(start time.Time) {
+        storageHistogram.WithLabelValues("single", "update").Observe(float64(time.Since(start)))
+        storageQueueSize.WithLabelValues("update").Inc()
+    }(time.Now())
+
     return s.bulkUpdate.Add(toQueueItem(item))
 }
 
 func (s *StorageManager) update(items []queueItem) error {
+    defer func(start time.Time) {
+        storageHistogram.WithLabelValues("bulk", "update").Observe(float64(time.Since(start)))
+        storageQueueSize.WithLabelValues("update").Sub(float64(len(items)))
+    }(time.Now())
+
     if err := s.queue.update(items); err != nil {
         log.Printf("failed to update queue %s\n", err)
         return err
@@ -118,11 +160,21 @@ func (s *StorageManager) update(items []queueItem) error {
 }
 
 func (s *StorageManager) Delete(item StorageItem) {
+    defer func(start time.Time) {
+        storageHistogram.WithLabelValues("single", "delete").Observe(float64(time.Since(start)))
+        storageQueueSize.WithLabelValues("delete").Inc()
+    }(time.Now())
+
     s.bulkDelete.Add(item.Id)
 }
 
 // todo retry delete
 func (s *StorageManager) delete(ids []string) error {
+    defer func(start time.Time) {
+        storageHistogram.WithLabelValues("bulk", "delete").Observe(float64(time.Since(start)))
+        storageQueueSize.WithLabelValues("delete").Sub(float64(len(ids)))
+    }(time.Now())
+
     if err := s.queue.delete(ids); err != nil {
         log.Printf("Delete from queue failed %v\n", err)
     }

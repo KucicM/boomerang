@@ -3,14 +3,32 @@ package storage
 import (
 	"database/sql"
 	"log"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite3"
+	"github.com/prometheus/client_golang/prometheus"
 
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
+
+var queueHistogram = prometheus.NewHistogramVec(
+    prometheus.HistogramOpts{Name: "db_queue_ops", Help: "Operations on db queue"},
+    []string{"op", "success"},
+)
+ var queueCounter = prometheus.NewCounterVec(
+     prometheus.CounterOpts{Name: "db_queue", Help: "Counts of operations on db queue"},
+     []string{"op", "success"},
+ )
+
+ func init() {
+     prometheus.MustRegister(
+         queueHistogram,
+         queueCounter,
+     )
+ }
 
 type PersistentQueueCfg struct {
     DbURL string
@@ -57,6 +75,12 @@ func (q *persistentQueue) save(items []queueItem) error {
         return nil
     }
 
+    var success = false
+    defer func(start time.Time) {
+        queueHistogram.WithLabelValues("save", strconv.FormatBool(success)).Observe(float64(time.Since(start)))
+        queueCounter.WithLabelValues("save", strconv.FormatBool(success)).Add(float64(len(items)))
+    }(time.Now())
+
     q.lock.Lock()
     defer q.lock.Unlock()
 
@@ -86,10 +110,21 @@ func (q *persistentQueue) save(items []queueItem) error {
             return err
         }
     }
-    return tx.Commit()
+    if err = tx.Commit(); err != nil {
+        return err
+    }
+    success = true
+    return nil
 }
 
 func (q *persistentQueue) load(maxSize int) ([]queueItem, error) {
+    var success = false
+    var size = 0
+    defer func(start time.Time) {
+        queueHistogram.WithLabelValues("load", strconv.FormatBool(success)).Observe(float64(time.Since(start)))
+        queueCounter.WithLabelValues("load", strconv.FormatBool(success)).Add(float64(size))
+    }(time.Now())
+
     q.lock.Lock()
     defer q.lock.Unlock()
 
@@ -134,6 +169,8 @@ func (q *persistentQueue) load(maxSize int) ([]queueItem, error) {
         return nil, err
     }
 
+    size = len(items)
+    success = true
     return items, nil
 }
 
@@ -141,6 +178,12 @@ func (q *persistentQueue) delete(ids []string) error {
     if len(ids) == 0 {
         return nil
     }
+
+    var success = false
+    defer func(start time.Time) {
+        queueHistogram.WithLabelValues("load", strconv.FormatBool(success)).Observe(float64(time.Since(start)))
+        queueCounter.WithLabelValues("load", strconv.FormatBool(success)).Add(float64(len(ids)))
+    }(time.Now())
 
     q.lock.Lock()
     defer q.lock.Unlock()
@@ -175,7 +218,22 @@ func (q *persistentQueue) delete(ids []string) error {
 }
 
 func (q *persistentQueue) update(items []queueItem) error {
-    return q.save(items)
+    if len(items) == 0 {
+        return nil 
+    }
+
+    // TODO fix double counting save metrics
+    var success = false
+    defer func(start time.Time) {
+        queueHistogram.WithLabelValues("update", strconv.FormatBool(success)).Observe(float64(time.Since(start)))
+        queueCounter.WithLabelValues("update", strconv.FormatBool(success)).Add(float64(len(items)))
+    }(time.Now())
+
+    if err := q.save(items); err != nil {
+        return err
+    }
+    success = true
+    return nil
 }
 
 func (q *persistentQueue) Shutdown() error {

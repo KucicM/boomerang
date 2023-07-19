@@ -3,14 +3,33 @@ package storage
 import (
 	"database/sql"
 	"log"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite3"
+	"github.com/prometheus/client_golang/prometheus"
 
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
+
+var blobHistogram = prometheus.NewHistogramVec(
+    prometheus.HistogramOpts{Name: "db_blob_ops", Help: "Operations on db bobs"},
+    []string{"op", "success"},
+)
+ var blobCounter = prometheus.NewCounterVec(
+     prometheus.CounterOpts{Name: "db_blob", Help: "Counts of operations on db blob"},
+     []string{"op", "success"},
+ )
+
+ func init() {
+     prometheus.MustRegister(
+         blobHistogram,
+         blobCounter,
+     )
+ }
 
 type BlobStorageCfg struct {
     DbURL string
@@ -58,6 +77,12 @@ func (s *blobStorage) save(items []blobItem) error {
         return nil 
     }
 
+    var success = false
+    defer func(start time.Time) {
+        blobHistogram.WithLabelValues("save", strconv.FormatBool(success)).Observe(float64(time.Since(start)))
+        blobCounter.WithLabelValues("save", strconv.FormatBool(success)).Add(float64(len(items)))
+    }(time.Now())
+
     s.lock.Lock()
     defer s.lock.Unlock()
 
@@ -78,13 +103,24 @@ func (s *blobStorage) save(items []blobItem) error {
             return err
         }
     }
-    return tx.Commit()
+    if err := tx.Commit(); err != nil {
+        return err
+    }
+    success = true
+    return nil
 }
 
 func (s *blobStorage) load(ids []string) ([]blobItem, error) {
     if len(ids) == 0 {
         return []blobItem{}, nil
     }
+
+    var success = false
+    defer func(start time.Time) {
+        blobHistogram.WithLabelValues("load", strconv.FormatBool(success)).Observe(float64(time.Since(start)))
+        blobCounter.WithLabelValues("load", strconv.FormatBool(success)).Add(float64(len(ids)))
+    }(time.Now())
+
     s.lock.Lock()
     defer s.lock.Unlock()
 
@@ -107,6 +143,7 @@ func (s *blobStorage) load(ids []string) ([]blobItem, error) {
         }
         ret = append(ret, r)
     }
+    success = true
     return ret, nil
 }
 
@@ -114,6 +151,12 @@ func (s *blobStorage) delete(ids []string) error {
     if len(ids) == 0 {
         return nil
     }
+
+    var success = false
+    defer func(start time.Time) {
+        blobHistogram.WithLabelValues("delete", strconv.FormatBool(success)).Observe(float64(time.Since(start)))
+        blobCounter.WithLabelValues("delete", strconv.FormatBool(success)).Add(float64(len(ids)))
+    }(time.Now())
 
     s.lock.Lock()
     defer s.lock.Unlock()
@@ -143,6 +186,8 @@ func (s *blobStorage) delete(ids []string) error {
         log.Printf("error commiting blobs delete %s\n", err)
         return err
     }
+
+    success = true
 
     return nil
 }
