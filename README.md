@@ -16,3 +16,4 @@ Should support: Sqlite, Postgresql, Cassandra/Scylla
 
 - [ ] Postgresql + Cassandra/Scylla 
 - [ ] Tune databases
+- [ ] Database sharding
