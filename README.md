@@ -12,6 +12,7 @@ Should support: Sqlite, Postgresql, Cassandra/Scylla
 - [ ] Mutli instance support
 - [ ] Speed control/rate limit (multi instance)
 - [ ] Latency based db load per endpoint
+- [ ] Add tests
 
 - [ ] Postgresql + Cassandra/Scylla 
 - [ ] Tune databases
