@@ -37,3 +37,11 @@ type blobItem struct {
 func toBlobItem(s StorageItem) blobItem {
     return blobItem{s.Id, s.Payload, s.Headers}
 }
+
+type Status int
+const (
+    Initial Status = iota
+    Running = iota
+    Retry = iota
+    Recovered = iota
+)
