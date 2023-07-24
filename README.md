@@ -10,7 +10,8 @@ Should support: Sqlite, Postgresql, Cassandra/Scylla
 
 - [ ] Yaml config
 - [ ] Mutli instance support
-- [ ] Gorutes per "tag" (or endpoint, one endpoint should not affect other.. maybe some speed control?)
+- [ ] Speed control/rate limit (multi instance)
+- [ ] Latency based db load per endpoint
 
 - [ ] Postgresql + Cassandra/Scylla 
 - [ ] Tune databases
