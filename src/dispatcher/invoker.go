@@ -95,7 +95,11 @@ func (inv *Invoker) invoke(dbItem storage.StorageItem, semaphore chan struct{}) 
     client := &http.Client{}
     resp, err := client.Do(req)
     if err != nil {
-        callHistogram.WithLabelValues(strconv.FormatBool(false), resp.Status).Observe(float64(time.Since(start)))
+        status := "No Response"
+        if resp != nil {
+            status = resp.Status
+        }
+        callHistogram.WithLabelValues(strconv.FormatBool(false), status).Observe(float64(time.Since(start)))
         retryCounter.Inc()
         inv.retry.Retry(dbItem)
         log.Printf("Error on call %v\n", err)
