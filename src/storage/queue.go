@@ -66,8 +66,19 @@ func newQueue(cfg PersistentQueueCfg) (*persistentQueue, error) {
         log.Printf("Error running migration %v\n", err)
         return nil, err
     }
-    
-    return &persistentQueue{db: db, lock: &sync.Mutex{}}, nil
+
+    q := &persistentQueue{db: db, lock: &sync.Mutex{}}
+    if err := q.statusReset(); err != nil {
+        return nil, err
+    }
+
+    return q, nil
+}
+
+func (q *persistentQueue) statusReset() error {
+    query := "UPDATE PriorityQueue SET Status = 3 WHERE Status = 1;"
+    _, err := q.db.Exec(query)
+    return err
 }
 
 func (q *persistentQueue) save(items []queueItem) error {
@@ -134,7 +145,7 @@ func (q *persistentQueue) load(maxSize int) ([]queueItem, error) {
         SELECT * 
         FROM PriorityQueue
         WHERE sendAfter < ?
-            AND (status = 0 OR status = 2)
+            AND (status = 0 OR status = 2 OR status = 3)
         ORDER BY sendAfter
         LIMIT ?
     )

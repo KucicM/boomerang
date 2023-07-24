@@ -11,7 +11,6 @@ Should support: Sqlite, Postgresql, Cassandra/Scylla
 - [ ] Status enum
 - [ ] Yaml config
 - [ ] Mutli instance support
-- [ ] Make it safe to restart
 - [ ] Gorutes per "tag" (or endpoint, one endpoint should not affect other.. maybe some speed control?)
 
 - [ ] Postgresql + Cassandra/Scylla 
