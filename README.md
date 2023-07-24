@@ -8,7 +8,6 @@ Should support: Sqlite, Postgresql, Cassandra/Scylla
 
 ## TODOS:
 
-- [ ] Status enum
 - [ ] Yaml config
 - [ ] Mutli instance support
 - [ ] Gorutes per "tag" (or endpoint, one endpoint should not affect other.. maybe some speed control?)
