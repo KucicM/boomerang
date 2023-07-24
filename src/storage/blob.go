@@ -2,6 +2,7 @@ package storage
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -44,29 +45,22 @@ func newBlobStorage(cfg BlobStorageCfg) (*blobStorage, error) {
     log.Println("connecting to blob database")
     db, err := sql.Open("sqlite3", cfg.DbURL)
     if err != nil {
-        log.Printf("Cannot open queue database %v\n", err)
-        return nil, err
+        return nil, fmt.Errorf("Cannot open queue database %v", err)
     }
-
-    log.Println("connected to queue database")
-
 
     driver, err := sqlite3.WithInstance(db, &sqlite3.Config{})
     if err != nil {
-        log.Printf("Error getting a driver %v\n", err)
-        return nil, err
+        return nil, fmt.Errorf("Error getting a driver %v", err)
     }
 
     m, err := migrate.NewWithDatabaseInstance("file://resources/sql/blobs", "sqlite3", driver)
     if err != nil {
-        log.Printf("Error getting a migration %v\n", err)
-        return nil, err
+        return nil, fmt.Errorf("Error getting a migration %v", err)
     }
 
     log.Println("Running blobs db migration script")
     if err := m.Up(); err != nil && err.Error() != "no change" {
-        log.Printf("Error running migration %v\n", err)
-        return nil, err
+        return nil, fmt.Errorf("Error running migration %v", err)
     }
 
     return &blobStorage{db: db, lock: &sync.Mutex{}}, nil
@@ -163,32 +157,27 @@ func (s *blobStorage) delete(ids []string) error {
 
     tx, err := s.db.Begin()
     if err != nil {
-        log.Printf("failed to begin blobs delete transaction %s\n", err)
-        return err
+        return fmt.Errorf("failed to begin blobs delete transaction %s", err)
     }
     defer tx.Rollback() 
 
     stmt, err := tx.Prepare("DELETE FROM Blobs WHERE id = ?;")
     if err != nil {
-        log.Printf("failed to create blobs delete statement %s\n", err)
-        return err
+        return fmt.Errorf("failed to create blobs delete statement %s", err)
     }
     defer stmt.Close()
 
     for _, id := range ids {
         if _, err := stmt.Exec(id); err != nil {
-            log.Printf("error executing blobs delete %s\n", err)
-            return err
+            return fmt.Errorf("error executing blobs delete %s", err)
         }
     }
 
     if err = tx.Commit(); err != nil {
-        log.Printf("error commiting blobs delete %s\n", err)
-        return err
+        return fmt.Errorf("error commiting blobs delete %s", err)
     }
 
     success = true
-
     return nil
 }
 

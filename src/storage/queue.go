@@ -2,6 +2,7 @@ package storage
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"strconv"
 	"sync"
@@ -40,31 +41,24 @@ type persistentQueue struct {
 }
 
 func newQueue(cfg PersistentQueueCfg) (*persistentQueue, error) {
-    log.Println("connecting to queue database")
-
     db, err := sql.Open("sqlite3", cfg.DbURL)
     if err != nil {
-        log.Printf("Cannot open queue database %s %v\n", cfg.DbURL, err)
-        return nil, err
+        return nil, fmt.Errorf("Cannot open queue database %s %v", cfg.DbURL, err)
     }
     log.Println("connected to queue database")
 
     driver, err := sqlite3.WithInstance(db, &sqlite3.Config{})
     if err != nil {
-        log.Printf("Error getting a driver %v\n", err)
-        return nil, err
+        return nil, fmt.Errorf("Error getting a driver %v", err)
     }
 
     m, err := migrate.NewWithDatabaseInstance("file://resources/sql/queue", "sqlite3", driver)
     if err != nil {
-        log.Printf("Error getting a migration %v\n", err)
-        return nil, err
+        return nil, fmt.Errorf("Error getting a migration %v", err)
     }
 
-    log.Println("Running queue db migration script")
     if err := m.Up(); err != nil && err.Error() != "no change" {
-        log.Printf("Error running migration %v\n", err)
-        return nil, err
+        return nil, fmt.Errorf("Error running migration %v\n", err)
     }
 
     q := &persistentQueue{db: db, lock: &sync.Mutex{}}
@@ -76,8 +70,7 @@ func newQueue(cfg PersistentQueueCfg) (*persistentQueue, error) {
 }
 
 func (q *persistentQueue) statusReset() error {
-    query := "UPDATE PriorityQueue SET Status = 3 WHERE Status = 1;"
-    _, err := q.db.Exec(query)
+    _, err := q.db.Exec("UPDATE PriorityQueue SET Status = 3 WHERE Status = 1;")
     return err
 }
 
@@ -202,28 +195,24 @@ func (q *persistentQueue) delete(ids []string) error {
 
     tx, err := q.db.Begin()
     if err != nil {
-        log.Printf("failed to begin queue delete transaction %s\n", err)
-        return err
+        return fmt.Errorf("failed to begin queue delete transaction %s", err)
     }
     defer tx.Rollback()
 
     stmt, err := tx.Prepare("DELETE FROM PriorityQueue WHERE Id = ?;")
     if err != nil {
-        log.Printf("failed to create queue delete statement %s\n", err)
-        return err
+        return fmt.Errorf("failed to create queue delete statement %s", err)
     }
     defer stmt.Close()
 
     for _, id := range ids {
         if _, err = stmt.Exec(id); err != nil {
-            log.Printf("error executing queue delete %s\n", err)
-            return err
+            return fmt.Errorf("error executing queue delete %s", err)
         }
     }
 
     if err = tx.Commit(); err != nil {
-        log.Printf("error commiting queue delete %s\n", err)
-        return err
+        return fmt.Errorf("error commiting queue delete %s", err)
     }
 
     return nil
