@@ -135,6 +135,7 @@ func (q *persistentQueue) load(maxSize int) ([]queueItem, error) {
         FROM PriorityQueue
         WHERE sendAfter < ?
             AND (status = 0 OR status = 2)
+        ORDER BY sendAfter
         LIMIT ?
     )
     UPDATE PriorityQueue
