@@ -42,7 +42,6 @@ type blobStorage struct {
 }
 
 func newBlobStorage(cfg BlobStorageCfg) (*blobStorage, error) {
-    log.Println("connecting to blob database")
     db, err := sql.Open("sqlite3", cfg.DbURL)
     if err != nil {
         return nil, fmt.Errorf("Cannot open queue database %v", err)
@@ -58,11 +57,11 @@ func newBlobStorage(cfg BlobStorageCfg) (*blobStorage, error) {
         return nil, fmt.Errorf("Error getting a migration %v", err)
     }
 
-    log.Println("Running blobs db migration script")
     if err := m.Up(); err != nil && err.Error() != "no change" {
         return nil, fmt.Errorf("Error running migration %v", err)
     }
 
+    log.Println("connected to blob database")
     return &blobStorage{db: db, lock: &sync.Mutex{}}, nil
 }
 

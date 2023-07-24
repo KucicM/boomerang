@@ -20,6 +20,7 @@ func main() {
     http.Handle("/metrics", promhttp.Handler())
 
     go func() {
+        log.Println("Server started")
         if err := http.ListenAndServe(":8888", nil); !errors.Is(err, http.ErrServerClosed) {
             log.Fatalf("Server failed %s\n", err)
         }

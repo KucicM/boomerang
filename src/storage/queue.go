@@ -45,7 +45,6 @@ func newQueue(cfg PersistentQueueCfg) (*persistentQueue, error) {
     if err != nil {
         return nil, fmt.Errorf("Cannot open queue database %s %v", cfg.DbURL, err)
     }
-    log.Println("connected to queue database")
 
     driver, err := sqlite3.WithInstance(db, &sqlite3.Config{})
     if err != nil {
@@ -66,6 +65,7 @@ func newQueue(cfg PersistentQueueCfg) (*persistentQueue, error) {
         return nil, err
     }
 
+    log.Println("connected to queue database")
     return q, nil
 }
 
