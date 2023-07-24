@@ -49,25 +49,20 @@ func NewInvoker(store *storage.StorageManager) *Invoker {
 
 func (inv *Invoker) start() {
     semaphore := make(chan struct{}, inv.workerPoolSize)
-
+    reqQ := inv.store.GetReqQueue(inv.maxBatchSize)
     for atomic.LoadInt32(&inv.status) == 0 {
-        dbReqs, err := inv.store.Load(inv.maxBatchSize)
-        if err != nil {
-            log.Printf("Cannot load items %v\n", err)
-            continue
-        }
-
-        for _, dbReq := range dbReqs {
+        for dbReq := range reqQ {
             semaphore <- struct{}{}
             go inv.invoke(dbReq, semaphore)
+            activeCallsGuage.Set(float64(len(semaphore)))
         }
-        activeCallsGuage.Set(float64(len(semaphore)))
     }
 
     close(semaphore)
     for len(semaphore) > 0 {
         <-semaphore
         activeCallsGuage.Set(float64(len(semaphore)))
+        time.Sleep(time.Millisecond)
     }
 
     inv.done <-struct{}{}
@@ -117,6 +112,7 @@ func (inv *Invoker) invoke(dbItem storage.StorageItem, semaphore chan struct{}) 
 
 func (inv *Invoker) Shutdown() error {
     log.Println("Invoker shutdown...")
+    inv.store.StopLoadQueue()
     atomic.StoreInt32(&inv.status, 1)
     <-inv.done
     return nil

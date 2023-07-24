@@ -2,6 +2,8 @@ package storage
 
 import (
 	"log"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -31,6 +33,8 @@ type StorageManager struct {
     bulkSave *BulkProcessor[StorageItem]
     bulkDelete *BulkProcessor[string]
     bulkUpdate *BulkProcessor[queueItem]
+    stop int32
+    wg *sync.WaitGroup
 }
 
 func NewStorageManager() (*StorageManager, error) {
@@ -46,7 +50,7 @@ func NewStorageManager() (*StorageManager, error) {
         return nil, err
     }
 
-    m := &StorageManager{queue: queue, blobs: blobs}
+    m := &StorageManager{queue: queue, blobs: blobs, stop: 0, wg: &sync.WaitGroup{}}
     m.bulkSave = NewBulkProcessor(
         1000,
         100,
@@ -107,7 +111,39 @@ func (s *StorageManager) save(items []StorageItem) error {
     return nil
 }
 
-func (s *StorageManager) Load(maxSize int) ([]StorageItem, error) {
+func (s *StorageManager) GetReqQueue(maxSize int) (chan StorageItem) {
+    q := make(chan StorageItem, maxSize)
+    s.wg.Add(1)
+    go func() {
+        defer s.wg.Done()
+        for atomic.LoadInt32(&s.stop) == 0 {
+            items, err := s.load(maxSize)
+            if err != nil {
+                log.Printf("error loading items from database %s\n", err)
+            }
+
+            for _, item := range items {
+                q <- item
+            }
+
+            if len(items) == 0 {
+                // probably could wait for request and stop wating?
+                time.Sleep(time.Second)
+            }
+        }
+        close(q)
+    }()
+    return q
+}
+
+func (s *StorageManager) StopLoadQueue() {
+    log.Println("stopping adding items to req queue")
+    atomic.StoreInt32(&s.stop, 1)
+    s.wg.Wait()
+    log.Println("stopped adding items to req queue")
+}
+
+func (s *StorageManager) load(maxSize int) ([]StorageItem, error) {
     defer func(start time.Time) {
         storageHistogram.WithLabelValues("bulk", "load").Observe(float64(time.Since(start)))
     }(time.Now())
