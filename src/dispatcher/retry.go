@@ -19,7 +19,7 @@ func (r *Retrier) Retry(item storage.StorageItem) {
         return
     }
 
-    item.StatusId = 2
+    item.Status = storage.Retry
     item.MaxRetry -= 1
     item.SendAfter = uint64(time.Now().UnixMilli()) + uint64(item.BackOffMs)
 

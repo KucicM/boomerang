@@ -115,7 +115,7 @@ func (q *persistentQueue) save(items []queueItem) error {
             item.sendAfter, 
             item.leftAttempts, 
             item.backOffMs,
-            item.statusId,
+            item.status,
         )
         if err != nil {
             return err
@@ -169,7 +169,7 @@ func (q *persistentQueue) load(maxSize int) ([]queueItem, error) {
             &item.sendAfter, 
             &item.leftAttempts, 
             &item.backOffMs,
-            &item.statusId,
+            &item.status,
         )
         if err != nil {
             return nil, err

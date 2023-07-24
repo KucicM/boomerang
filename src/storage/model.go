@@ -6,13 +6,13 @@ type StorageItem struct {
     SendAfter uint64
     MaxRetry int
     BackOffMs uint64
-    StatusId int
+    Status Status
     Payload string
     Headers string
 }
 
 func toStorageItem(q queueItem, b blobItem) StorageItem {
-    return StorageItem{q.id, q.endpoint, q.sendAfter, q.leftAttempts, q.backOffMs, q.statusId, b.payload, b.headers}
+    return StorageItem{q.id, q.endpoint, q.sendAfter, q.leftAttempts, q.backOffMs, q.status, b.payload, b.headers}
 }
 
 type queueItem struct {
@@ -21,11 +21,11 @@ type queueItem struct {
     sendAfter uint64
     leftAttempts int
     backOffMs uint64
-    statusId int
+    status Status
 }
 
 func toQueueItem(s StorageItem) queueItem {
-    return queueItem{s.Id, s.Endpoint, s.SendAfter, s.MaxRetry, s.BackOffMs, s.StatusId}
+    return queueItem{s.Id, s.Endpoint, s.SendAfter, s.MaxRetry, s.BackOffMs, s.Status}
 }
 
 type blobItem struct {

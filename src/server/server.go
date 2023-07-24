@@ -89,6 +89,7 @@ func (s *Server) AcceptRequest(w http.ResponseWriter, r *http.Request) {
         MaxRetry: req.MaxRetry,
         BackOffMs: req.BackOffMs,
         Headers: req.Headers,
+        Status: storage.Initial,
     }
     if err := s.store.Save(storeReq); err != nil {
         w.WriteHeader(http.StatusInternalServerError)
