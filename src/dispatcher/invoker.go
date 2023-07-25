@@ -6,7 +6,6 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"sync/atomic"
 	"time"
 
 	"github.com/kucicm/boomerang/src/storage"
@@ -36,13 +35,12 @@ type Invoker struct {
     maxBatchSize int
     workerPoolSize int
 
-    status int32
     done chan struct{}
 }
 
 func NewInvoker(store *storage.StorageManager) *Invoker {
     retry := NewRetrier(store)
-    invoker := &Invoker{store, retry, 1000, 100, 0, make(chan struct{})}
+    invoker := &Invoker{store, retry, 1000, 100, make(chan struct{})}
     go invoker.start()
     return invoker
 }
@@ -50,12 +48,11 @@ func NewInvoker(store *storage.StorageManager) *Invoker {
 func (inv *Invoker) start() {
     semaphore := make(chan struct{}, inv.workerPoolSize)
     reqQ := inv.store.GetReqQueue(inv.maxBatchSize)
-    for atomic.LoadInt32(&inv.status) == 0 {
-        for dbReq := range reqQ {
-            semaphore <- struct{}{}
-            go inv.invoke(dbReq, semaphore)
-            activeCallsGuage.Set(float64(len(semaphore)))
-        }
+
+    for dbReq := range reqQ {
+        semaphore <- struct{}{}
+        go inv.invoke(dbReq, semaphore)
+        activeCallsGuage.Set(float64(len(semaphore)))
     }
 
     close(semaphore)
@@ -71,6 +68,9 @@ func (inv *Invoker) start() {
 
 func (inv *Invoker) invoke(dbItem storage.StorageItem, semaphore chan struct{}) {
     start := time.Now()
+    defer func() {
+        <-semaphore
+    }()
 
     req, err := http.NewRequest(http.MethodPost, dbItem.Endpoint, bytes.NewBufferString(dbItem.Payload))
     if err != nil {
@@ -110,14 +110,12 @@ func (inv *Invoker) invoke(dbItem storage.StorageItem, semaphore chan struct{}) 
     callHistogram.WithLabelValues(strconv.FormatBool(true), resp.Status).Observe(float64(time.Since(start)))
 
     inv.store.Delete(dbItem)
-
-    <- semaphore
 }
 
 func (inv *Invoker) Shutdown() error {
     log.Println("Invoker shutdown...")
     inv.store.StopLoadQueue()
-    atomic.StoreInt32(&inv.status, 1)
     <-inv.done
+    log.Println("Invoker stopped")
     return nil
 }

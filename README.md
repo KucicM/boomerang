@@ -13,6 +13,8 @@ Should support: Sqlite, Postgresql, Cassandra/Scylla
 - [ ] Speed control/rate limit (multi instance)
 - [ ] Latency based db load per endpoint
 - [ ] Add tests
+- [ ] Redis cache
+- [ ] Add to load queue without needing to load (if sendAfter is now or in past, add to queue and save it with running status)
 
 - [ ] Postgresql + Cassandra/Scylla 
 - [ ] Tune databases
