@@ -112,3 +112,30 @@ func TestFaileSave(t *testing.T) {
     }
 
 }
+
+func TestBadRequest(t *testing.T) {
+    store := &mockStore{
+    	returnErr: errors.New("ups"),
+    	called:    false,
+    	item:      &ScheduleRequest{},
+    }
+    srv := NewAccepter(store)
+
+    requestBody := strings.NewReader("")
+    req, err := http.NewRequest(http.MethodPost, "/submit", requestBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rr := httptest.NewRecorder()
+
+    srv.SubmitHandler(rr, req)
+
+	if status := rr.Code; status != http.StatusBadRequest {
+		t.Errorf("Handler returned wrong status code: got %v want %v", status, http.StatusBadRequest)
+	}
+
+    if store.called {
+        t.Error("store called")
+    }
+}
