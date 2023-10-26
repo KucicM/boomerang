@@ -115,7 +115,7 @@ func TestFaileSave(t *testing.T) {
 
 func TestBadRequest(t *testing.T) {
     store := &mockStore{
-    	returnErr: errors.New("ups"),
+    	returnErr: nil,
     	called:    false,
     	item:      &ScheduleRequest{},
     }
