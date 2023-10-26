@@ -23,6 +23,7 @@ var (
 )
 
 type ScheduleRequest struct {
+    Id uint64
     Endpoint string `json:"endpoint"`
     Headers map[string]string `json:"headers"`
     Payload string `json:"payload"`
