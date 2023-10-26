@@ -15,8 +15,8 @@ import (
 
 
 func main() {
-    srv := server.NewServer()
-    http.HandleFunc("/submit", srv.AcceptRequest)
+    srv := server.NewAccepter(store *storage.Storage)
+    http.HandleFunc("/submit", srv.SubmitHandler)
     http.Handle("/metrics", promhttp.Handler())
 
     go func() {

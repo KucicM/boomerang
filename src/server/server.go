@@ -3,116 +3,98 @@ package server
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
-	"strconv"
 	"time"
 
-	"github.com/kucicm/boomerang/src/dispatcher"
-	"github.com/kucicm/boomerang/src/storage"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-var submitHistogram = prometheus.NewHistogramVec(
-    prometheus.HistogramOpts{
-        Name: "submit_requests", 
-        Help: "Every call on endpoint /submnit",
-    },
-    []string{"success"},
+var ( 
+    counter = promauto.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "submit_requests", 
+            Help: "submit_requests",
+        },
+        []string{"status"},
+    )
+    summary = promauto.NewSummaryVec(
+        prometheus.SummaryOpts{
+            Name: "submit_requests", 
+            Help: "submit_requests",
+        },
+        []string{"status"},
+    )
 )
 
-func init() {
-    prometheus.MustRegister(submitHistogram)
-}
-
-type Request struct {
+type ScheduleRequest struct {
     Endpoint string `json:"endpoint"`
+    Headers map[string]string `json:"headers"`
     Payload string `json:"payload"`
     SendAfter uint64 `json:"sendAfter"`
     MaxRetry int `json:"maxRetry"`
     BackOffMs uint64 `json:"backOffMs"`
-    Headers string `json:"headers"`
+    TimeToLive uint64 `json:"TimeToLive"`
 }
 
-type Server struct {
-    store *storage.StorageManager
-    inv *dispatcher.Invoker
+type store interface {
+    save(ScheduleRequest) error
 }
 
-func NewServer() *Server {
-    mng, err := storage.NewStorageManager()
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    inv := dispatcher.NewInvoker(mng)
-
-    return &Server{
-        store: mng,
-        inv: inv,
-    }
+type accepter struct {
+    store store
 }
 
-func (s *Server) AcceptRequest(w http.ResponseWriter, r *http.Request) {
-    var success = false
+func NewAccepter(store store) *accepter {
+    log.Println("Accepter init")
+    return &accepter{store}
+}
+
+func (a *accepter) SubmitHandler(w http.ResponseWriter, r *http.Request) {
+    var status = "ok"
     defer func(start time.Time) {
-        submitHistogram.WithLabelValues(strconv.FormatBool(success)).Observe(float64(time.Since(start).Milliseconds()))
+        counter.WithLabelValues(status).Inc()
+        summary.WithLabelValues(status).Observe(float64(time.Since(start).Nanoseconds()))
     }(time.Now())
 
-    if r.Method != http.MethodPost {
+    if r.Method != http.MethodPost { // TODO replace with new stuff
         w.WriteHeader(http.StatusMethodNotAllowed)
+        status = "invalid method"
         return
     }
 
-    body, err := ioutil.ReadAll(r.Body)
+    body, err := io.ReadAll(r.Body)
     if err != nil {
         w.WriteHeader(http.StatusInternalServerError)
         fmt.Fprintf(w, "Error reading request body %v", err)
-        log.Printf("Error in submit %v\n", err)
+        log.Printf("Error in submit handler %v\n", err)
+        status = "invalid body"
         return
     }
     defer r.Body.Close()
 
-    var req Request
+    var req ScheduleRequest
     if err = json.Unmarshal(body, &req); err != nil {
         w.WriteHeader(http.StatusBadRequest)
         fmt.Fprintf(w, "Cannot parse request body %v", err)
-        log.Printf("Cannot parse request body %v\n", err)
+        log.Printf("Cannot parse schedule request body %v\n", err)
+        status = "invalid request"
         return
     }
 
-    storeReq := storage.StorageItem{
-        Endpoint: req.Endpoint,
-        Payload: req.Payload,
-        SendAfter: req.SendAfter,
-        MaxRetry: req.MaxRetry,
-        BackOffMs: req.BackOffMs,
-        Headers: req.Headers,
-        Status: storage.Initial,
-    }
-    if err := s.store.Save(storeReq); err != nil {
+    if err := a.store.save(req); err != nil {
         w.WriteHeader(http.StatusInternalServerError)
-        fmt.Fprintf(w, "Cannot save request to database %v", err)
+        fmt.Fprintf(w, "Cannot save schadule request %v", err)
+        status = "save fail"
         return
     }
 
-    fmt.Fprintf(w, "%s", body)
-    success = true
+    fmt.Fprintf(w, "%s", body) // debug
 }
 
-func (s *Server) Shutdown() error {
-    log.Println("Server shutdown")
-
-    var ret error
-    if err := s.inv.Shutdown(); err != nil {
-        log.Printf("error shutting down invoker %s\n", err)
-        ret = err
-    }
-
-    if err := s.store.Shutdown(); err != nil {
-        log.Printf("error shutting down store manager %s\n", err)
-        ret = err
-    }
-    return ret
+func (a *accepter) Shutdown() error {
+    log.Println("Accepter shutdown")
+    return nil
 }

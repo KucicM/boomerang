@@ -59,13 +59,12 @@ func (b *BulkProcessor[T]) createBatch() ([]T, []chan error) {
     timeout := time.NewTimer(b.maxWait)
     defer timeout.Stop()
 
-    items := make([]T, 0)
-    errs := make([]chan error, 0)
+    items := make([]T, b.maxBatchSize)
+    errs := make([]chan error, b.maxBatchSize)
     for i := 0; i < b.maxBatchSize; i++ {
         select {
         case it := <-b.queue:
-            items = append(items, it.item)
-            errs = append(errs, it.err)
+            items[i], errs[i] = it.item, it.err
         case <-timeout.C:
             return items, errs
         }
