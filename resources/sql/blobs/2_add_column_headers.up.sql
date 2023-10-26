@@ -1,1 +1,0 @@
-ALTER TABLE Blobs ADD COLUMN headers TEXT;

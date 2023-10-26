@@ -1,4 +1,0 @@
-CREATE TABLE IF NOT EXISTS Blobs (
-    id TEXT PRIMARY KEY, 
-    payload TEXT
-);
