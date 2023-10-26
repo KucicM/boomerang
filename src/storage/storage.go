@@ -23,7 +23,6 @@ type StorageServiceCfg struct {
 
 type StorageService struct {
     dbClient *pgxpool.Pool
-    ctx context.Context
 }
 
 func NewStorageService(cfg StorageServiceCfg) (*StorageService, error) {
@@ -45,7 +44,6 @@ func NewStorageService(cfg StorageServiceCfg) (*StorageService, error) {
 
     s := &StorageService{
         dbClient: dbpool,
-        ctx: ctx,
     }
     return s, nil
 }
@@ -55,8 +53,13 @@ func (s *StorageService) Save(r srv.ScheduleRequest) error {
         (endpoint, headers, payload, send_after, max_retry, back_off_ms, time_to_live)
         VALUES ($1, $2, $3, $4, $5, $6, $7)`
 
-    headers, _ := json.Marshal(r.Headers)
-    _, err := s.dbClient.Exec(s.ctx, query, r.Endpoint, headers, r.Payload, r.SendAfter, r.MaxRetry, r.BackOffMs, r.TimeToLive)
+    headers, err := json.Marshal(r.Headers)
+    if err != nil {
+        return fmt.Errorf("failed to convert headers to string %s", err)
+    }
+
+    _, err = s.dbClient.Exec(context.Background(), query, 
+        r.Endpoint, headers, r.Payload, r.SendAfter, r.MaxRetry, r.BackOffMs, r.TimeToLive)
     if err != nil {
         log.Printf("Error saving to primary queue %s\n", err)
         return err
