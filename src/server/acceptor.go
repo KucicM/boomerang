@@ -13,17 +13,10 @@ import (
 )
 
 var ( 
-    counter = promauto.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "submit_requests", 
-            Help: "submit_requests",
-        },
-        []string{"status"},
-    )
     summary = promauto.NewSummaryVec(
         prometheus.SummaryOpts{
-            Name: "submit_requests", 
-            Help: "submit_requests",
+            Name: "boomerang_submit_request",
+            Help: "boomerang_submit_request",
         },
         []string{"status"},
     )
@@ -40,7 +33,7 @@ type ScheduleRequest struct {
 }
 
 type store interface {
-    save(ScheduleRequest) error
+    Save(ScheduleRequest) error
 }
 
 type accepter struct {
@@ -55,7 +48,6 @@ func NewAccepter(store store) *accepter {
 func (a *accepter) SubmitHandler(w http.ResponseWriter, r *http.Request) {
     var status = "ok"
     defer func(start time.Time) {
-        counter.WithLabelValues(status).Inc()
         summary.WithLabelValues(status).Observe(float64(time.Since(start).Nanoseconds()))
     }(time.Now())
 
@@ -84,7 +76,7 @@ func (a *accepter) SubmitHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    if err := a.store.save(req); err != nil {
+    if err := a.store.Save(req); err != nil {
         w.WriteHeader(http.StatusInternalServerError)
         fmt.Fprintf(w, "Cannot save schadule request %v", err)
         status = "save fail"

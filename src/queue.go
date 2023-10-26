@@ -5,7 +5,7 @@ type QueueItem struct {
 }
 
 type DispatcherQueue struct {
-    stats *StatsTracker
+//    stats *StatsTracker
 
 }
 
