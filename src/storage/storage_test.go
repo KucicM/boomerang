@@ -105,6 +105,7 @@ func TestSave(t *testing.T) {
 
     var headers string
     var got server.ScheduleRequest
+    var status int
     err = db.QueryRow("SELECT * FROM schedule.primary_queue LIMIT 1;").Scan(
         &got.Id,
         &got.Endpoint,
@@ -114,6 +115,7 @@ func TestSave(t *testing.T) {
         &got.MaxRetry,
         &got.BackOffMs,
         &got.TimeToLive,
+        &status,
     )
     if err != nil {
         t.Error(err)
@@ -130,6 +132,10 @@ func TestSave(t *testing.T) {
     got.Id = 0
     if !reflect.DeepEqual(got, req) {
         t.Errorf("expected %+v got %+v", req, got)
+    }
+
+    if status != 0 {
+        t.Errorf("expected status 0 got %d", status)
     }
 }
 
@@ -150,7 +156,7 @@ func TestSaveLoad(t *testing.T) {
     	SendAfter:  328389,
     	MaxRetry:   23,
     	BackOffMs:  12,
-    	TimeToLive: 91909129,
+    	TimeToLive: uint64(time.Now().UnixMilli()) + 5_000,
     }
 
     if err = storage.Save(req); err != nil {

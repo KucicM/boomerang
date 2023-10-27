@@ -69,11 +69,14 @@ func (s *StorageService) Save(r srv.ScheduleRequest) error {
 
 func (s *StorageService) Load(bs uint) []srv.ScheduleRequest {
     // todo update status
-    // todo load only ready items
     // todo fair queue
     query := `SELECT 
         id, endpoint, headers, payload, send_after, max_retry, back_off_ms, time_to_live
         FROM schedule.primary_queue 
+        WHERE 
+            STATUS = 0
+            AND send_after <= EXTRACT(epoch FROM CURRENT_TIMESTAMP) * 1000
+            AND time_to_live >= EXTRACT(epoch FROM CURRENT_TIMESTAMP) * 1000
         LIMIT $1;`
 
     rows, err := s.dbClient.Query(context.Background(), query, bs)
