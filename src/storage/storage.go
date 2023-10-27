@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/pgx"
@@ -25,27 +26,36 @@ type StorageService struct {
     dbClient *pgxpool.Pool
 }
 
+var once sync.Once
+var singletone *StorageService
+var createError error
+
 func NewStorageService(cfg StorageServiceCfg) (*StorageService, error) {
-    ctx := context.Background()
-    dbpool, err := pgxpool.New(context.Background(), os.Getenv("DB_URL"))
-    if err != nil {
-        return nil, fmt.Errorf("cannot open database %v", err)
-    }
+    once.Do(func() {
+        ctx := context.Background()
+        dbpool, err := pgxpool.New(context.Background(), os.Getenv("DB_URL"))
+        if err != nil {
+            createError = fmt.Errorf("cannot open database %v", err)
+            return
+        }
 
-    if err = dbpool.Ping(ctx); err != nil {
-        return nil, fmt.Errorf("cannot ping database %v", err)
-    }
+        if err = dbpool.Ping(ctx); err != nil {
+            createError = fmt.Errorf("cannot ping database %v", err)
+            return
+        }
 
-    log.Println("Connected to dabase")
+        log.Println("Connected to dabase")
 
-    if err := runDatabaseMigration(cfg.migrationPath); err != nil {
-        return nil, err
-    }
+        if err := runDatabaseMigration(cfg.migrationPath); err != nil {
+            createError = err
+            return
+        }
 
-    s := &StorageService{
-        dbClient: dbpool,
-    }
-    return s, nil
+        singletone = &StorageService{
+            dbClient: dbpool,
+        }
+    })
+    return singletone, createError
 }
 
 func (s *StorageService) Save(r srv.ScheduleRequest) error {
