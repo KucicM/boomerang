@@ -68,16 +68,30 @@ func (s *StorageService) Save(r srv.ScheduleRequest) error {
 }
 
 func (s *StorageService) Load(bs uint) []srv.ScheduleRequest {
-    // todo update status
     // todo fair queue
-    query := `SELECT 
-        id, endpoint, headers, payload, send_after, max_retry, back_off_ms, time_to_live
-        FROM schedule.primary_queue 
-        WHERE 
+    query := `
+    WITH ready AS (
+        SELECT *
+        FROM schedule.primary_queue
+        WHERE
             STATUS = 0
             AND send_after <= EXTRACT(epoch FROM CURRENT_TIMESTAMP) * 1000
             AND time_to_live >= EXTRACT(epoch FROM CURRENT_TIMESTAMP) * 1000
-        LIMIT $1;`
+        LIMIT $1
+    )
+    UPDATE schedule.primary_queue
+    SET status = 1
+    FROM ready
+    WHERE schedule.primary_queue.id = ready.id
+    RETURNING ready.id
+            , ready.endpoint
+            , ready.headers
+            , ready.payload
+            , ready.send_after
+            , ready.max_retry
+            , ready.back_off_ms
+            , ready.time_to_live;
+    `
 
     rows, err := s.dbClient.Query(context.Background(), query, bs)
     if err != nil {

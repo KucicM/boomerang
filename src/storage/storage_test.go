@@ -179,3 +179,34 @@ func TestSaveLoad(t *testing.T) {
     }
 }
 
+func TestLoadNItems(t *testing.T) {
+    if err := TruncateTables(); err != nil {
+        t.Error(err)
+    }
+
+    storage, err := NewStorageService(StorageServiceCfg{migrationPath: "file://../../resources/sql"})
+    if err != nil {
+        t.Error(err)
+    }
+
+    for i := 0; i < 20; i++ {
+        req := server.ScheduleRequest{
+            Endpoint:   "Test",
+            Headers:    map[string]string{"Ha": "Ha", "He": "He"},
+            Payload:    "slkdjf",
+            SendAfter:  328389,
+            MaxRetry:   23,
+            BackOffMs:  12,
+            TimeToLive: uint64(time.Now().UnixMilli()) + 5_000,
+        }
+
+        if err = storage.Save(req); err != nil {
+            t.Error(err)
+        }
+    }
+
+    loaded := storage.Load(10)
+    if len(loaded) != 10 {
+        t.Errorf("expected loaded size of 10 got %d", len(loaded))
+    }
+}
