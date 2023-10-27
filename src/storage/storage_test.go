@@ -259,3 +259,49 @@ func TestDeleteTask(t *testing.T) {
         t.Errorf("expected no rows to be found with id %d\n", it.Id)
     }
 }
+
+func TestUpdate(t *testing.T) {
+    if err := TruncateTables(); err != nil {
+        t.Error(err)
+    }
+    db, err := GetTestDatabase()
+    if err != nil {
+        t.Error(err)
+    }
+
+    storage, err := NewStorageService(StorageServiceCfg{migrationPath: "file://../../resources/sql"})
+    if err != nil {
+        t.Error(err)
+    }
+
+    req := server.ScheduleRequest{
+        Endpoint:   "Test",
+        Headers:    map[string]string{"Ha": "Ha", "He": "He"},
+        Payload:    "slkdjf",
+        SendAfter:  328389,
+        MaxRetry:   23,
+        BackOffMs:  12,
+        TimeToLive: uint64(time.Now().UnixMilli()) + 5_000,
+    }
+
+    if err = storage.Save(req); err != nil {
+        t.Error(err)
+    }
+
+    it := storage.Load(1)[0]
+    it.MaxRetry = 1
+
+    storage.Update(it)
+
+
+    var retry int
+    err = db.QueryRow("SELECT max_retry FROM schedule.primary_queue WHERE id = $1;", it.Id).Scan(&retry)
+    if err != nil {
+        t.Error(err)
+    }
+
+    if retry != 1 {
+        t.Errorf("expected max_retry to be 1 got %d\n", retry)
+    }
+
+}

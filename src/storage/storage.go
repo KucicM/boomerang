@@ -118,7 +118,21 @@ func (s *StorageService) Load(bs uint) []srv.ScheduleRequest {
 }
 
 func (s *StorageService) Update(task srv.ScheduleRequest) {
-    // find task with id and update it
+    query := `UPDATE schedule.primary_queue
+        SET 
+            send_after = $2
+            , max_retry = $3
+        WHERE Id = $1
+    `
+    tag, err := s.dbClient.Exec(context.Background(), query, task.Id, task.SendAfter, task.MaxRetry)
+    if err != nil {
+        log.Printf("error on update of task with id %d, err: %s\n", task.Id, err)
+        return
+    }
+
+    if tag.RowsAffected() != 1 {
+        log.Printf("update of id %d caused %d updates\n", task.Id, tag.RowsAffected())
+    }
 }
 
 func (s *StorageService) Delete(task srv.ScheduleRequest) {
