@@ -68,6 +68,9 @@ func (s *StorageService) Save(r srv.ScheduleRequest) error {
 }
 
 func (s *StorageService) Load(bs uint) []srv.ScheduleRequest {
+    // todo update status
+    // todo load only ready items
+    // todo fair queue
     query := `SELECT 
         id, endpoint, headers, payload, send_after, max_retry, back_off_ms, time_to_live
         FROM schedule.primary_queue 
@@ -108,7 +111,6 @@ func (s *StorageService) Shutdown() error {
     s.dbClient.Close()
     return nil
 }
-
 
 func runDatabaseMigration(migrationPath string) error {
     log.Println("running migration")
