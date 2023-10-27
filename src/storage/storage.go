@@ -68,7 +68,33 @@ func (s *StorageService) Save(r srv.ScheduleRequest) error {
 }
 
 func (s *StorageService) Load(bs uint) []srv.ScheduleRequest {
-    return nil
+    query := `SELECT 
+        id, endpoint, headers, payload, send_after, max_retry, back_off_ms, time_to_live
+        FROM schedule.primary_queue 
+        LIMIT $1;`
+
+    rows, err := s.dbClient.Query(context.Background(), query, bs)
+    if err != nil {
+        log.Printf("Error loading schedule requests from dababase %s\n", err)
+        return []srv.ScheduleRequest{}
+    }
+
+    out := make([]srv.ScheduleRequest, 0, bs)
+    for rows.Next() {
+        var it srv.ScheduleRequest
+        var headers string
+        err := rows.Scan(&it.Id, &it.Endpoint, &headers, &it.Payload, &it.SendAfter, &it.MaxRetry, &it.BackOffMs, &it.TimeToLive)
+        if err != nil {
+            log.Printf("Error converting database row to struct %s\n", err)
+            continue
+        }
+        if err = json.Unmarshal([]byte(headers), &it.Headers); err != nil {
+            log.Printf("Error converting database headers to struct %s\n", err)
+            continue
+        }
+        out = append(out, it)
+    }
+    return out
 }
 
 func (s *StorageService) Update(task srv.ScheduleRequest) {
