@@ -122,6 +122,10 @@ func (s *StorageService) Update(task srv.ScheduleRequest) {
 }
 
 func (s *StorageService) Delete(task srv.ScheduleRequest) {
+    query := `DELETE FROM schedule.primary_queue WHERE id = $1;`
+    if _, err := s.dbClient.Exec(context.Background(), query, task.Id); err != nil {
+        log.Printf("failed to delete task with id %d error: %s\n", task.Id, err)
+    }
 }
 
 func (s *StorageService) Shutdown() error {
