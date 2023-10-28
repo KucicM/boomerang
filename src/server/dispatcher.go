@@ -97,11 +97,14 @@ func (d *dispatcher) doCall(req ScheduleRequest, res chan sendResult, wg *sync.W
     client := &http.Client{}
     resp, err := client.Do(httpReq)
     if err != nil {
-        log.Printf("error calling %s %s", req.Endpoint, err)
+        log.Printf("error calling %s %s\n", req.Endpoint, err)
         return
     }
     defer resp.Body.Close()
-    success = true
+
+    if resp.StatusCode < 500 {
+        success = true
+    }
 }
 
 func (d *dispatcher) finalizeCall(results <-chan sendResult) {
