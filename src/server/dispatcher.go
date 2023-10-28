@@ -9,6 +9,11 @@ import (
 	"time"
 )
 
+type DispatcherConfig struct {
+    LoadBatchSize uint
+    MaxConcurrency uint
+}
+
 type sendResult struct {
     req ScheduleRequest
     success bool
@@ -17,19 +22,25 @@ type sendResult struct {
 
 type storage interface {
     Load(bs uint) ([]ScheduleRequest, error)
-    Update(req ScheduleRequest) error
-    Delete(req ScheduleRequest) error
+    Update(req ScheduleRequest)
+    Delete(req ScheduleRequest)
 }
 
 type dispatcher struct {
+    cfg DispatcherConfig
     store storage
     stopSingal int32
     wg sync.WaitGroup
+    semaphore chan struct{}
 }
 
-func NewDispatcher(store storage) *dispatcher {
+func NewDispatcher(cfg DispatcherConfig,store storage) *dispatcher {
     return &dispatcher{
+        cfg: cfg,
     	store: store,
+        stopSingal: 0,
+        wg: sync.WaitGroup{},
+        semaphore: make(chan struct{}, cfg.MaxConcurrency),
     }
 }
 
@@ -46,7 +57,7 @@ func (d *dispatcher) Start() {
 }
 
 func (d *dispatcher) loadBatch() []ScheduleRequest {
-    reqs, err := d.store.Load(10) // todo batch should be from config
+    reqs, err := d.store.Load(d.cfg.LoadBatchSize) // todo batch should be from config
     if err != nil {
         log.Printf("cannot get batch of requests %s\n", err)
         return []ScheduleRequest{}
@@ -58,14 +69,17 @@ func (d *dispatcher) sendBatch(batch []ScheduleRequest) <-chan sendResult {
     ret := make(chan sendResult, len(batch))
     defer close(ret)
 
+    if len(batch) == 0 {
+        time.Sleep(time.Second)
+        return ret
+    }
+
     wg := &sync.WaitGroup{}
     wg.Add(len(batch))
 
     for _, req := range batch {
-        go func(r ScheduleRequest, c chan sendResult, w *sync.WaitGroup) {
-            defer w.Done()
-            c <- sendResult{req: r}
-        }(req, ret, wg)
+        d.semaphore <- struct{}{}
+        go d.doCall(req, ret, wg)
     }
 
     go func(w *sync.WaitGroup, c chan sendResult) {
@@ -77,8 +91,10 @@ func (d *dispatcher) sendBatch(batch []ScheduleRequest) <-chan sendResult {
 }
 
 func (d *dispatcher) doCall(req ScheduleRequest, res chan sendResult, wg *sync.WaitGroup) {
-    // todo add semaphore
-    defer wg.Done()
+    defer func() {
+        <- d.semaphore
+        wg.Done()
+    }()
     var success bool
 
     defer func(success bool, start time.Time) {
@@ -112,11 +128,11 @@ func (d *dispatcher) finalizeCall(results <-chan sendResult) {
     for res := range results {
         req := res.req
         if res.success || !isValidForRetry(req){
-            _ = d.store.Delete(req) // todo handle error
+            d.store.Delete(req)
         } else {
             req.SendAfter += req.BackOffMs
             req.MaxRetry -= 1
-            _ = d.store.Update(req) // todo handle error
+            d.store.Update(req)
         }
     }
 }
