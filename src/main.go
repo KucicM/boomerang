@@ -9,7 +9,6 @@ import (
 	"syscall"
 
 	"github.com/kucicm/boomerang/src/server"
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
