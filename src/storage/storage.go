@@ -12,7 +12,7 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/pgx"
 	"github.com/jackc/pgx/v5/pgxpool"
-	srv "github.com/kucicm/boomerang/src/server"
+    srv "github.com/kucicm/boomerang/src/server"
 )
 
 type StorageServiceCfg struct {
