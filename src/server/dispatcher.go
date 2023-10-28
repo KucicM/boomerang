@@ -77,6 +77,7 @@ func (d *dispatcher) sendBatch(batch []ScheduleRequest) <-chan sendResult {
 }
 
 func (d *dispatcher) doCall(req ScheduleRequest, res chan sendResult, wg *sync.WaitGroup) {
+    // todo add semaphore
     defer wg.Done()
     var success bool
 
@@ -110,12 +111,9 @@ func (d *dispatcher) doCall(req ScheduleRequest, res chan sendResult, wg *sync.W
 func (d *dispatcher) finalizeCall(results <-chan sendResult) {
     for res := range results {
         req := res.req
-        if res.success {
+        if res.success || !isValidForRetry(req){
             _ = d.store.Delete(req) // todo handle error
         } else {
-            // validate should retry
-            // if not delete
-            // if yes
             req.SendAfter += req.BackOffMs
             req.MaxRetry -= 1
             _ = d.store.Update(req) // todo handle error
