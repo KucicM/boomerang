@@ -67,7 +67,7 @@ func TestHappyPath(t *testing.T) {
     }
 }
 
-func TestFaileSave(t *testing.T) {
+func TestFailedSave(t *testing.T) {
     expectedReq := ScheduleRequest{
         Endpoint: "example.com/test",
         Headers: map[string]string{"test1": "123"},

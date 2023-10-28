@@ -12,7 +12,8 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/pgx"
 	"github.com/jackc/pgx/v5/pgxpool"
-    srv "github.com/kucicm/boomerang/src/server"
+	srv "github.com/kucicm/boomerang/src/server"
+    _ "github.com/golang-migrate/migrate/v4/source/file"
 )
 
 type StorageServiceCfg struct {
@@ -32,19 +33,18 @@ var createError error
 
 func NewStorageService(cfg StorageServiceCfg) (*StorageService, error) {
     once.Do(func() {
-        ctx := context.Background()
         dbpool, err := pgxpool.New(context.Background(), os.Getenv("DB_URL"))
         if err != nil {
             createError = fmt.Errorf("cannot open database %v", err)
             return
         }
 
-        if err = dbpool.Ping(ctx); err != nil {
+        if err = dbpool.Ping(context.Background()); err != nil {
             createError = fmt.Errorf("cannot ping database %v", err)
             return
         }
 
-        log.Println("Connected to dabase")
+        log.Println("Connected to database")
 
         if err := runDatabaseMigration(cfg.migrationPath); err != nil {
             createError = err

@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-type DispatcherConfig struct {
+type DispatcherCfg struct {
     LoadBatchSize uint
     MaxConcurrency uint
 }
@@ -21,56 +21,59 @@ type sendResult struct {
 }
 
 type storage interface {
-    Load(bs uint) ([]ScheduleRequest, error)
+    Load(bs uint) []ScheduleRequest
     Update(req ScheduleRequest)
     Delete(req ScheduleRequest)
 }
 
 type dispatcher struct {
-    cfg DispatcherConfig
+    cfg DispatcherCfg
     store storage
     stopSingal int32
     wg sync.WaitGroup
     semaphore chan struct{}
 }
 
-func NewDispatcher(cfg DispatcherConfig,store storage) *dispatcher {
-    return &dispatcher{
-        cfg: cfg,
-    	store: store,
-        stopSingal: 0,
-        wg: sync.WaitGroup{},
-        semaphore: make(chan struct{}, cfg.MaxConcurrency),
-    }
+var dispathcer *dispatcher
+var onceDispathcer sync.Once
+func NewDispatcher(cfg DispatcherCfg,store storage) *dispatcher {
+    onceDispathcer.Do(func() {
+        dispathcer = &dispatcher{
+            cfg: cfg,
+            store: store,
+            stopSingal: 0,
+            wg: sync.WaitGroup{},
+            semaphore: make(chan struct{}, cfg.MaxConcurrency),
+        }
+    })
+    return dispathcer
 }
 
+var startOnlyOnce sync.Once
 func (d *dispatcher) Start() {
-    d.wg.Add(1)
-    go func() {
-        defer d.wg.Done()
-        for atomic.LoadInt32(&d.stopSingal) == 0 {
-            batch := d.loadBatch()
-            results := d.sendBatch(batch)
-            d.finalizeCall(results)
-        }
-    }()
+    startOnlyOnce.Do(func() {
+        d.wg.Add(1)
+        go func() {
+            defer d.wg.Done()
+            for atomic.LoadInt32(&d.stopSingal) == 0 {
+                batch := d.loadBatch()
+                results := d.sendBatch(batch)
+                d.finalizeCall(results)
+            }
+        }()
+    })
 }
 
 func (d *dispatcher) loadBatch() []ScheduleRequest {
-    reqs, err := d.store.Load(d.cfg.LoadBatchSize) // todo batch should be from config
-    if err != nil {
-        log.Printf("cannot get batch of requests %s\n", err)
-        return []ScheduleRequest{}
-    }
-    return reqs
+    return d.store.Load(d.cfg.LoadBatchSize)
 }
 
 func (d *dispatcher) sendBatch(batch []ScheduleRequest) <-chan sendResult {
     ret := make(chan sendResult, len(batch))
-    defer close(ret)
 
     if len(batch) == 0 {
         time.Sleep(time.Second)
+        close(ret)
         return ret
     }
 
@@ -91,14 +94,11 @@ func (d *dispatcher) sendBatch(batch []ScheduleRequest) <-chan sendResult {
 }
 
 func (d *dispatcher) doCall(req ScheduleRequest, res chan sendResult, wg *sync.WaitGroup) {
-    defer func() {
-        <- d.semaphore
-        wg.Done()
-    }()
     var success bool
-
     defer func(success bool, start time.Time) {
         res <- sendResult{req: req, success: success, timeTaken: time.Since(start).Nanoseconds()}
+        <- d.semaphore
+        wg.Done()
     }(success, time.Now())
 
     httpReq, err := http.NewRequest(http.MethodPost, req.Endpoint, bytes.NewBufferString(req.Payload))
